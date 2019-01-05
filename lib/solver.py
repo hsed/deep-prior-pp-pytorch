@@ -9,14 +9,18 @@ def train_epoch(model, criterion, optimizer, train_loader, device=torch.device('
 
     for batch_idx, (inputs, targets) in enumerate(train_loader):
         inputs, targets = inputs.to(device, dtype), targets.to(device, dtype)
+        #print("TARGETS:", targets)
         optimizer.zero_grad()
         outputs = model(inputs)
+        #print("OUTPUTS:", outputs)
         loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
+        #print("LOSS:",loss.item())
+        #quit()
 
         train_loss += loss.item()
-        progress_bar(batch_idx, len(train_loader), 'Loss: {0:.4e}'.format(train_loss/(batch_idx+1)))
+        progress_bar(batch_idx, len(train_loader), 'Loss: {0:.4e}'.format(train_loss/(batch_idx+1)))    #
         #print('loss: {0: .4e}'.format(train_loss/(batch_idx+1)))
 
 

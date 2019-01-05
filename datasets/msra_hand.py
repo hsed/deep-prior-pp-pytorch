@@ -6,9 +6,12 @@ from torch.utils.data import Dataset
 
 
 def pixel2world(x, y, z, img_width, img_height, fx, fy):
+    # from pixel,pixel,mm values to mm,mm,mm values
+    # i.e. from a depth_map 2d matrix containing dpeth in mm
+    # to actual 3d cords plottable in 3d view
     w_x = (x - img_width / 2) * z / fx
     w_y = (img_height / 2 - y) * z / fy
-    w_z = z
+    w_z = z ## thi is unchanged
     return w_x, w_y, w_z
 
 
@@ -19,13 +22,25 @@ def world2pixel(x, y, z, img_width, img_height, fx, fy):
 
 
 def depthmap2points(image, fx, fy):
+    ## convert (x,y,z) with x,y in img (pixel) values and z in mm
+    ## to (x,y,z) ALL in mm values
     h, w = image.shape
     x, y = np.meshgrid(np.arange(w) + 1, np.arange(h) + 1)
     points = np.zeros((h, w, 3), dtype=np.float32)
     points[:,:,0], points[:,:,1], points[:,:,2] = pixel2world(x, y, image, w, h, fx, fy)
     return points
 
-
+## is this the inverse of the above function?? confirm....
+## this returns something like np.meshgrid so like x,y values
+## it returns x,y and corresponding z is points[i,2] which is unchanged
+## so what you can do is:
+## let tmp_img = np.zeros((h,w)) so 2d matrix
+##  for each pixel i from 1 -> 76800:
+##    do: tmp_img[pixes[i,0], pixels[i,1]] = pixels[2]
+## check if this works by checking with original depthmap
+## if it works with orig res then u can also resize
+## also use plots to check if the shape looks somewhat ok.
+## see plotting function in old code        
 def points2pixels(points, img_width, img_height, fx, fy):
     pixels = np.zeros((points.shape[0], 2))
     pixels[:, 0], pixels[:, 1] = \
@@ -33,7 +48,22 @@ def points2pixels(points, img_width, img_height, fx, fy):
     return pixels
 
 
+def pixelsdepth2depthmap(pixels, deptharray, img, img_width, img_height):
+    tmp_img = np.zeros((img_height,img_width))
+    #tmp_
+
+
 def load_depthmap(filename, img_width, img_height, max_depth):
+    '''
+        Given a bin file for one sample e.g. 000000_depth.bin
+        Load the depthmap
+        Load the gt bounding box countaining sample hand
+        Clean the image by:
+            - setting depth_values within bounding box as actual
+            - setting all other depth_values to MAX_DEPTH
+        I.e. all other stuff is deleted
+        
+    '''
     with open(filename, mode='rb') as f:
         data = f.read()
         _, _, left, top, right, bottom = struct.unpack('I'*6, data[:6*4])
@@ -43,7 +73,13 @@ def load_depthmap(filename, img_width, img_height, max_depth):
         cropped_image = np.asarray(cropped_image).reshape(bottom-top, -1)
         depth_image = np.zeros((img_height, img_width), dtype=np.float32)
         depth_image[top:bottom, left:right] = cropped_image
-        depth_image[depth_image == 0] = max_depth
+        
+        ## be careful here thats not the way of deep_prior
+        ### thus we have commented this line!
+        #depth_image[depth_image == 0] = max_depth 
+        ## in deep_prior max_depth is kept at 0 and only changed in the end.
+
+        ## plot here to see how it looks like
 
         return depth_image
 
@@ -58,13 +94,13 @@ class MARAHandDataset(Dataset):
         self.fy = 241.42
         self.joint_num = 21
         self.world_dim = 3
-        self.folder_list = ['1','2','3','4','5','6','7','8','9','I','IP','L','MP','RP','T','TIP','Y']
-        self.subject_num = 9
+        self.folder_list = ['1'] #['1','2','3','4','5','6','7','8','9','I','IP','L','MP','RP','T','TIP','Y']
+        self.subject_num = 9 ## number of subjects   
 
         self.root = root
         self.center_dir = center_dir
         self.mode = mode
-        self.test_subject_id = test_subject_id
+        self.test_subject_id = test_subject_id ## do testing using this ID's data
         self.transform = transform
 
         if not self.mode in ['train', 'test']: raise ValueError('Invalid mode')
@@ -72,20 +108,34 @@ class MARAHandDataset(Dataset):
 
         if not self._check_exists(): raise RuntimeError('Invalid MSRA hand dataset')
         
+        ### load all the y_values and corresponding corrected CoM values using
+        ### 'train.txt' and 'center_train_refined'
+
         self._load()
     
     def __getitem__(self, index):
+        ## the x-values are loaded 'on-the-fly' as and when required.
+        ## this function is called internally by pytorch whenever a new sample needs to
+        ## be loaded.
         depthmap = load_depthmap(self.names[index], self.img_width, self.img_height, self.max_depth)
+        
+        ## Note: For deep-prior we DO NOT want to do this.
+        ## are input should remain as 2D img with depth values
         points = depthmap2points(depthmap, self.fx, self.fy)
+        
+        ## originally points are (240,320, 3)
+        ## later they are reshaped to (240*320==76800, 3)
         points = points.reshape((-1, 3))
 
         sample = {
-            'name': self.names[index],
-            'points': points,
-            'joints': self.joints_world[index],
-            'refpoint': self.ref_pts[index]
+            'name': self.names[index], # sample name
+            'points': points, # 3d points of the sample i.e. 3d point cloud view.
+            'joints': self.joints_world[index], # 3d joints of the sample
+            'refpoint': self.ref_pts[index], # 3d ref point of centre of mass, this is the REFINED CoM points
+            'depthmap': depthmap, # also send the depth map as sample
         }
 
+        ## a lot happens here.
         if self.transform: sample = self.transform(sample)
 
         return sample
@@ -97,11 +147,12 @@ class MARAHandDataset(Dataset):
         self._compute_dataset_size()
 
         self.num_samples = self.train_size if self.mode == 'train' else self.test_size
-        self.joints_world = np.zeros((self.num_samples, self.joint_num, self.world_dim))
-        self.ref_pts = np.zeros((self.num_samples, self.world_dim))
+        self.joints_world = np.zeros((self.num_samples, self.joint_num, self.world_dim), dtype=np.float32)
+        self.ref_pts = np.zeros((self.num_samples, self.world_dim), dtype=np.float32)
         self.names = []
 
         # Collect reference center points strings
+        ## ref points are collected based on TEST SSUBJ ID
         if self.mode == 'train': ref_pt_file = 'center_train_' + str(self.test_subject_id) + '_refined.txt'
         else: ref_pt_file = 'center_test_' + str(self.test_subject_id) + '_refined.txt'
 
@@ -125,31 +176,33 @@ class MARAHandDataset(Dataset):
                     with open(annot_file) as f:
                         lines = [line.rstrip() for line in f]
 
-                    # skip first line
+                    # skip first line as it contains an int: `num of samples`
                     for i in range(1, len(lines)):
-                        # referece point
+                        # referece point, this contains REFINED CoM 3d co-ord
                         splitted = ref_pt_str[file_id].split()
                         if splitted[0] == 'invalid':
                             print('Warning: found invalid reference frame')
                             file_id += 1
                             continue
                         else:
-                            self.ref_pts[frame_id, 0] = float(splitted[0])
-                            self.ref_pts[frame_id, 1] = float(splitted[1])
-                            self.ref_pts[frame_id, 2] = float(splitted[2])
+                            self.ref_pts[frame_id, 0] = float(splitted[0]) #CoM x
+                            self.ref_pts[frame_id, 1] = float(splitted[1]) #CoM y
+                            self.ref_pts[frame_id, 2] = float(splitted[2]) # CoM z
 
-                        # joint point
+                        # joint points... the gt (y-val) values in 3D for 21 joints
                         splitted = lines[i].split()
                         for jid in range(self.joint_num):
                             self.joints_world[frame_id, jid, 0] = float(splitted[jid * self.world_dim])
                             self.joints_world[frame_id, jid, 1] = float(splitted[jid * self.world_dim + 1])
-                            self.joints_world[frame_id, jid, 2] = -float(splitted[jid * self.world_dim + 2])
+                            self.joints_world[frame_id, jid, 2] = -float(splitted[jid * self.world_dim + 2])    ## ATTENTION: NOTE THE NEGATION THUS THIS IS SAME AS DEEP-PRIOR
                         
                         filename = os.path.join(self.root, 'P'+str(mid), fd, '{:0>6d}'.format(i-1) + '_depth.bin')
                         self.names.append(filename)
 
-                        frame_id += 1
-                        file_id += 1
+                        frame_id += 1   ## this may differ from i if any CoM is invalid otherwise it won't
+                        ## frame_id is used to ensure we only set samples with valid CoM values in our training/testing data matrix
+                        ## all other samples are ignored.
+                        file_id += 1 ## this is exactly same as i, so frame_id == i , so extra
 
     def _compute_dataset_size(self):
         self.train_size, self.test_size = 0, 0
