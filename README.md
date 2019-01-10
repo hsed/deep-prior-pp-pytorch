@@ -2,6 +2,7 @@
 Deep Prior PP implementation in PyTorch
 
 Many util functions based on https://github.com/moberweger/deep-prior-pp
+
 Many general (and util) functions based on https://github.com/dragonbook/V2V-PoseNet-pytorch
 
 
@@ -17,7 +18,7 @@ This was for pytorch 0.4.x, pytorch 1.0 has bug fixed: https://github.com/Micros
 ```
 python src/dp_model.py # for sample data model training
 
-python srtc/dp_main.py # for actual training
+python src/dp_main.py # for actual training
 ```
 
 ## Status
