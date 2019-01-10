@@ -158,7 +158,7 @@ class ResBlock(nn.Module):
 
 class DeepPriorPPModel(nn.Module):
     def __init__(self, input_channels=1, num_joints=21, num_dims=3, pca_components=30, dropout_prob=0.3,
-                 train_mode=True):
+                 train_mode=True, weight_matx_np=None, bias_matx_np=None):
         self.num_joints, self.num_dims = num_joints, num_dims
         self.train_mode = train_mode # when True output is PCA, else output is num_dims*num_joints
 
@@ -191,12 +191,13 @@ class DeepPriorPPModel(nn.Module):
               apply_relu=False, dropout_prob=0.)),  # 0 dropout => no dropout layer to add
         ]))
 
-
         ## back projection layer
-        ## TODO: MUST INIT WEIGHTS OF THIS ONE EITHER BEFORE OR AFTER TRAINING!
         self.final_layer = nn.Linear(pca_components, self.num_joints*self.num_dims)
 
-        #self._initialize_weights() TODO: overhere you can also do pca stuff
+        # currently done according to resnet implementation (He init conv layers)
+        # also init last layer with pca__inverse_transform vals and make it fixed
+        self._initialize_weights(w_final=weight_matx_np, b_final=bias_matx_np)
+
 
     def forward(self, x):
         #x = x.float()   # cast to float,temp fix..., later whole shuld be float
@@ -220,16 +221,36 @@ class DeepPriorPPModel(nn.Module):
         ## only pass through these layers when not training
         x = self.forward(x)
         x = self.final_layer(x)
-        x = x.view(-1, self.num_joints, self.num_dims)    #optional
+        return x.view(-1, self.num_joints, self.num_dims)    #optional
 
-    # TODO: do this asdone in deep-prior
-    # def _initialize_weights(self):
-    #     for m in self.modules():
-    #         if isinstance(m, nn.Conv2d):
-    #             nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-    #         elif isinstance(m, nn.BatchNorm2d):
-    #             nn.init.constant_(m.weight, 1)
-    #             nn.init.constant_(m.bias, 0)
+    # TODO: change this to as done in deep-prior?
+    # currently as porvided by torchvision resnet implementation
+    def _initialize_weights(self, w_final=None, b_final=None):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+        
+        #print("PARAMS: \n", list(self.children()))
+        #print("WEIGHTS: \n", self.final_layer.weight, "\nShape: ", self.final_layer.weight.shape)
+        #print("\nBIAS: \n", self.final_layer.bias, "\nShape: ", self.final_layer.bias.shape)
+        
+        # init final layer weights and make them fixed -- used only for test error
+        if (w_final is not None and b_final is not None):
+            # we use torch.tensor() method to create a copy of the array provided.
+            # as this method always copies data
+            self.final_layer.weight = \
+                torch.nn.Parameter(torch.tensor(w_final, dtype=self.final_layer.weight.dtype))
+            self.final_layer.bias = \
+                torch.nn.Parameter(torch.tensor(b_final, dtype=self.final_layer.bias.dtype))
+            
+            self.final_layer.weight.requires_grad = False
+            self.final_layer.bias.requires_grad = False
+            #print("\n\nNEW WEIGHTS: \n", self.final_layer.weight, "\nShape: ", self.final_layer.weight.shape)
+            #print("\nNEW BIAS: \n", self.final_layer.bias, "\nShape: ", self.final_layer.bias.shape, "\n")
+    
 
     ## makes a residual layer of n_blocks
     ## expansion is always 4x of bottleneck
@@ -248,24 +269,33 @@ class DeepPriorPPModel(nn.Module):
 
 if __name__ == "__main__":
     from torch.distributions import normal
-
+    
+    ### for model testing
+    norm_dist = normal.Normal(0, 1)
+    
     DP = DeepPriorPPModel()
-    m = normal.Normal(0, 1)
-    a = m.sample((10, 1,128,128))   # 10 hand samples
+    inputs = norm_dist.sample((10, 1,128,128)) # 10 hand samples
+    targets = norm_dist.sample((10,30))
+    outputs = DP(inputs)
 
-    b = DP.forward(a)
-
-    print(b.shape)
-
-
-    y = m.sample((10,30))#m.sample((10,256,8,8))
+    print("Inputs Shape: ", inputs.shape,
+            "\tOutputs Shape: ", outputs.shape,
+            "\tTargets Shape: ", targets.shape)
     
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(DP.parameters())
-    loss = criterion(b, y)
-    loss.backward() # calc weight grads
-    optimizer.step() # update weights
+    
+    losses = []
+    
+    print("Overfitting on 1 batch for 10 epochs...")
+    for i in range(10):
+        optimizer.zero_grad()
+        outputs = DP(inputs)   # direct invocation calls .forward() automatically
+        loss = criterion(outputs, targets)
+        loss.backward() # calc grads w.r.t weight/bias nodes
+        optimizer.step() # update weight/bias params
+        losses.append(loss.item())
 
-    print("Loss: ", loss.item())
+    print("10 Losses:\n", losses)
 
 

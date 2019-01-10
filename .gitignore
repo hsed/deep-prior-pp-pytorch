@@ -1,2 +1,9 @@
+# dataset 
 datasets/MSRA*
 
+# checkpoint files
+checkpoint/*
+
+# byte-compiled etc
+__pycache__/
+*.py[cod]

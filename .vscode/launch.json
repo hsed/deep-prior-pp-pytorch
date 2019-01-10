@@ -12,6 +12,14 @@
             "console": "integratedTerminal"
         },
         {
+            "name": "Python: dp_main.py -r 0 -e 1",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}\\src\\dp_main.py",
+            "args": ["-r", "0", "-e", "1"],
+            "console": "integratedTerminal"
+        },
+        {
             "name": "Python: Attach",
             "type": "python",
             "request": "attach",

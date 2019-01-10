@@ -4,6 +4,14 @@ import sys
 import struct
 from torch.utils.data import Dataset
 
+## starting from 1, each component of y_gt_mm_keypoints is
+# --1(wrist) -- index0
+# --2(index_mcp), 3(index_pip), 4(index_dip), 5(index_tip)
+# --6(middle_mcp), 7(middle_pip), 8(middle_dip), 9(middle_tip)
+# --10(ring_mcp), 11(ring_pip), 12(ring_dip), 13(ring_tip)
+# --14(little_mcp), 15(little_pip), 16(little_dip), 17(little_tip)
+# --18(thumb_mcp), 19(thumb_pip), 20(thumb_dip), 21(thumb_tip) -- index20
+
 
 def pixel2world(x, y, z, img_width, img_height, fx, fy):
     # from pixel,pixel,mm values to mm,mm,mm values
@@ -95,7 +103,7 @@ class MARAHandDataset(Dataset):
         self.joint_num = 21
         self.world_dim = 3
         self.folder_list = ['1'] #['1','2','3','4','5','6','7','8','9','I','IP','L','MP','RP','T','TIP','Y']
-        self.subject_num = 9 ## number of subjects   
+        self.subject_num = 3 ## 9 ## number of subjects  # reduced for faster training
 
         self.root = root
         self.center_dir = center_dir
@@ -131,7 +139,8 @@ class MARAHandDataset(Dataset):
             'name': self.names[index], # sample name
             'points': points, # 3d points of the sample i.e. 3d point cloud view.
             'joints': self.joints_world[index], # 3d joints of the sample
-            'refpoint': self.ref_pts[index], # 3d ref point of centre of mass, this is the REFINED CoM points
+            #### new changed!! use gt labels
+            'refpoint': self.joints_world[index][5],#self.ref_pts[index], # 3d ref point of centre of mass, this is the REFINED CoM points
             'depthmap': depthmap, # also send the depth map as sample
         }
 
@@ -153,6 +162,10 @@ class MARAHandDataset(Dataset):
 
         # Collect reference center points strings
         ## ref points are collected based on TEST SSUBJ ID
+        ## center_train_TESTSUBJID_refined.txt implies the refined net was trained using 
+        ## all subjects except for the test subject and then evaluated for all subjects (incl test subject)
+        ## the train file contains results for all data so 9 * 17 * 500
+        ## the test file contains results only for one data so 17 * 500
         if self.mode == 'train': ref_pt_file = 'center_train_' + str(self.test_subject_id) + '_refined.txt'
         else: ref_pt_file = 'center_test_' + str(self.test_subject_id) + '_refined.txt'
 
@@ -164,6 +177,7 @@ class MARAHandDataset(Dataset):
         frame_id = 0
 
         for mid in range(self.subject_num):
+            ## for each model_id
             if self.mode == 'train': model_chk = (mid != self.test_subject_id)
             elif self.mode == 'test': model_chk = (mid == self.test_subject_id)
             else: raise RuntimeError('unsupported mode {}'.format(self.mode))
@@ -213,8 +227,10 @@ class MARAHandDataset(Dataset):
                 annot_file = os.path.join(self.root, 'P'+str(mid), fd, 'joint.txt')
                 with open(annot_file) as f:
                     num = int(f.readline().rstrip())
-                if mid == self.test_subject_id: self.test_size += num
-                else: self.train_size += num
+                if mid == self.test_subject_id:
+                    self.test_size += num
+                else: 
+                    self.train_size += num
 
     def _check_exists(self):
         # Check basic data

@@ -1,10 +1,12 @@
+import os
 import sys
-import numpy as np
-import cv2
-import torch
-
 import multiprocessing
 import ctypes
+
+import cv2
+import torch
+import numpy as np
+
 
 def comToBounds(com, crop_size_3D, fx, fy):
     """
@@ -115,14 +117,25 @@ def standardiseImg(depth_img, com3D_mm, crop_dpt_mm, extrema=(-1,1), copy_arr=Fa
 
 def standardiseKeyPoints(keypoints_mm, crop_dpt_mm, copy_arr=False):
     '''
-        crop_dpt_mm => z-axis crop length in mm
+        crop_dpt_mm => the z-axis crop length in mm
+        returns val in range [-1, 1]
     '''
     ## only one standarisation method, I reckon this is -1 -> 1 standardisation
     ## as by default max values will be -crop3D_sz_mm/2, +crop3D_sz_mm/2
-    ## keypoints are the centered / translated  one relative to CoM
+    ## keypoints are the one relative to CoM
     if copy_arr:
         keypoints_mm = np.asarray(keypoints_mm.copy())
     return keypoints_mm / (crop_dpt_mm / 2.)
+
+def unStandardiseKeyPoints(keypoints_std, crop_dpt_mm, copy_arr=False):
+    '''
+        `keypoints_std` => keypoints in range [-1, 1]
+        `crop_dpt_mm` => the z-axis crop length in mm
+        returns val in range [-crop3D_sz_mm/2, +crop3D_sz_mm/2]
+    '''
+    if copy_arr:
+        keypoints_std = np.asarray(keypoints_std.copy())
+    return keypoints_std * (crop_dpt_mm / 2.)
     
 def cropImg(depth_img, com_px, fx, fy, crop3D_mm=(200, 200, 200), out2D_px = (128, 128)):
     """
@@ -168,6 +181,53 @@ class DeepPriorYTransform(object):
     def __call__(self, sample):
         return \
             standardiseKeyPoints(sample['joints'] - sample['refpoint'], self.crop_dpt_mm).flatten()
+
+class DeepPriorYInverseTransform(object):
+    '''
+        Quick transformer for y-vals only (keypoint)
+        Centers (w.r.t CoM in dB) and standardises (-1,1) y
+        
+        ## now this is an inverse of above
+
+    '''
+    def __init__(self, crop_dpt_mm=200):
+        self.crop_dpt_mm = crop_dpt_mm
+    
+    def __call__(self, sample):
+        pred_std_cen_batch, com_batch = sample
+        # use ref point to transform back to REAL MM values i.e
+        # mm distances of keypoints is w.r.t focal point of img
+        ## need to first transform pred_std_centered -> pred_mm_centered using the crop value
+        ## then transform pred_mm_centered -> pred_mm_not_centered by appending CoM value
+        ## now store this final value in 'keypoints'
+        ## also store gt_mm_not_centered in keypoints_gt for future error calc
+        
+        ## perform the operation in batch .. shuld automatically work with numpy
+        #print("\npred_std_cen_batch Shape: ", pred_std_cen_batch.shape)
+        #print("\ncom_batch Shape: ", com_batch.shape)
+        if len(pred_std_cen_batch.shape) == 3:
+            # broadcasting won't work automatically need to adjust array to handle that
+            # repetitions will happen along dim=1 so (N, 3) -> (N, 1, 3)
+            # Now we can do (N, 21, 3) + (N, 1, 3) as it allows automatic broadcasting along dim=1
+            # for (21, 3) + (3,) case this is handled automatically
+            com_batch = com_batch[:, None, :]
+
+        return \
+            (unStandardiseKeyPoints(pred_std_cen_batch, self.crop_dpt_mm) + com_batch)
+
+
+# class DeepPriorYInverseTransform(object):
+#     '''
+#         Quick transformer for y-vals only (keypoint)
+#         Centers (w.r.t CoM in dB) and standardises (-1,1) y
+#         y-val -> center
+#     '''
+#     def __init__(self, crop_dpt_mm=200):
+#         self.crop_dpt_mm = crop_dpt_mm
+    
+#     def __call__(self, sample):
+#         return \
+#             standardiseKeyPoints(sample['joints'] - sample['refpoint'], self.crop_dpt_mm).flatten()
 
 
 
@@ -271,7 +331,6 @@ class DeepPriorXYTransform(object):
 
         return (final_depth_img, final_keypoints)
 
-
     
     ## from deep-prior
     def jointsImgTo3D(self, sample):
@@ -327,8 +386,35 @@ class DeepPriorXYTransform(object):
 
 
 
+
+class DeepPriorXYTestTransform(DeepPriorXYTransform):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs) # initialise the super class
+
+    def __call__(self, sample):
+        final_depth_img, _ = super().__call__(sample) # transform x, y as usual
+        keypoints_gt_mm = sample['joints']  # get the actual y (untransformed)
+        com_mm = sample['refpoint'] # neede to transform back output from model
+
+        # basically for test we don't need to transform y_coords
+        # hence this derived class is used.
+        return (final_depth_img, keypoints_gt_mm, com_mm)
+
+
 class PCATransform():
-    def __init__(self, device=torch.device('cpu'), dtype=torch.float, n_components=30):
+    '''
+        A simple PCA transformer, supports PCA calc from data matrix and only single sample transformations\n
+        `device` & `dtype` => torch device and dtype to use.                            
+        `n_components` => Final PCA_components to keep.                         
+        `use_cache` => whether to load from cache if exists or save to if doesn't.
+        `overwrite_cache` => whether to force calc of new PCA and save new results to disk, 
+        overwriting any prev.\n
+        PCA is calculated using SVD of co-var matrix using torch (can be GPU) but any subsequent calls
+        transform numpy-type samples to new subspace using numpy arrays.
+    '''
+    def __init__(self, device=torch.device('cpu'), dtype=torch.float,
+                 n_components=30, use_cache=False, overwrite_cache=False,
+                 cache_dir='checkpoint'):
         
         ## filled on fit, after fit in cuda the np versions copy the matrix and mean vect
         self.transform_matrix_torch = None
@@ -343,6 +429,16 @@ class PCATransform():
         self.device = device
         self.dtype = dtype
         self.out_dim = n_components
+
+        self.use_cache = use_cache
+        self.overwrite_cache = overwrite_cache
+        self.cache_dir = cache_dir
+
+        if self.use_cache and not self.overwrite_cache:
+            self._load_cache()
+                
+                
+                    
 
     def __call__(self, sample):
         '''
@@ -360,14 +456,58 @@ class PCATransform():
         # though y_data is 1D array matmul automatically handles that and reshape y to col vector
         return (sample[0], np.matmul(self.transform_matrix_np, (sample[1] - self.mean_vect_np)))
     
-    ## create inverse transform function?
+    
+    def _load_cache(self):
+        cache_file = os.path.join(self.cache_dir, 'pca_'+str(self.out_dim)+'_cache.npz')
+        if os.path.isfile(cache_file):
+            npzfile = np.load(cache_file)
+
+            matx_shape = npzfile['transform_matrix_np'].shape
+            vect_shape = npzfile['mean_vect_np'].shape
+
+            shared_array_base = multiprocessing.Array(ctypes.c_float, matx_shape[0]*matx_shape[1])
+            shared_array = np.ctypeslib.as_array(shared_array_base.get_obj())
+            
+            shared_array_base2 = multiprocessing.Array(ctypes.c_float, vect_shape[0])
+            shared_array2 = np.ctypeslib.as_array(shared_array_base2.get_obj())
+            
+            shared_array = shared_array.reshape(matx_shape[0], matx_shape[1])
+            #print("SharedArrShape: ", shared_array.shape)
+
+            shared_array[:, :] = npzfile['transform_matrix_np']
+            shared_array2[:] = npzfile['mean_vect_np']
+
+            self.transform_matrix_np = shared_array
+            self.mean_vect_np = shared_array2
+        else:
+            # handles both no file and no cache dir
+            Warning("PCA cache file not found, a new one will be created after PCA calc.")
+            self.overwrite_cache = True # to ensure new pca matx is saved after calc
+    
+    def _save_cache(self):
+        ## assert is a keyword not a function!
+        assert (self.transform_matrix_np is not None), "Error: no transform matrix to save."
+        assert (self.mean_vect_np is not None), "Error: no mean vect to save."
+
+        if not os.path.isdir(self.cache_dir):
+            os.mkdir(self.cache_dir)
+        
+        cache_file = os.path.join(self.cache_dir, 'pca_'+str(self.out_dim)+'_cache.npz')
+        np.savez(cache_file, transform_matrix_np=self.transform_matrix_np, mean_vect_np=self.mean_vect_np)
+
 
     
-    def fit(self, X):
+    
+    ## create inverse transform function?
+    
+    def fit(self, X, return_X_no_mean=False):
         ## assume input is of torch type
         ## can put if condition here
         if X.dtype != self.dtype or X.device != self.device:
             X.to(device=self.device, dtype=self.dtype)
+        
+        if self.transform_matrix_np is not None:
+            Warning("PCA transform matx already exists, refitting...")
 
         # mean normalisation
         X_mean = torch.mean(X,0)
@@ -393,7 +533,7 @@ class PCATransform():
         shared_array2 = np.ctypeslib.as_array(shared_array_base2.get_obj())
         
         shared_array = shared_array.reshape(self.transform_matrix_np.shape[0], self.transform_matrix_np.shape[1])
-        print("SHapred", shared_array.shape)
+        print("SharedMemArr", shared_array.shape)
 
         shared_array[:, :] = self.transform_matrix_torch.cpu().clone().numpy()
         shared_array2[:] = self.mean_vect_torch.cpu().clone().numpy().flatten()
@@ -404,37 +544,110 @@ class PCATransform():
         self.transform_matrix_np = shared_array
         self.mean_vect_np = shared_array2
 
-        # self.transform_matrix_np.flags.writeable = False
-        # self.mean_vect_np.flags.writeable = False
+        self.transform_matrix_np.setflags(write=False)
+        self.mean_vect_np.setflags(write=False)
 
-        return np.matmul(X.numpy(), self.transform_matrix_np.T)
+        if self.use_cache and self.overwrite_cache:
+            # only saving if using cache feature and allowed to overwrite
+            # if initially no file exits overwrite_cache is set to True in _load_cache
+            self._save_cache()
+
+        
+        if return_X_no_mean:
+            # returns the X matrix as mean removed! Also a torch tensor!
+            return X
+        else:
+            return None
     
     
+    def fit_transform(self, X):
+        ## return transformed features for now
+        ## by multiplying appropriate matrix with mean removed X
+        # note fit if given return_X_no_mean returns X_no_mean_Torch
+        return np.matmul(self.fit(X, return_X_no_mean=True).numpy(), self.transform_matrix_np.T)
 
 
 
-class BatchResultCollector():
-    def __init__(self, data_loader, transform_output):
+class DeepPriorBatchResultCollector():
+    def __init__(self, data_loader, transform_output, num_samples):
         self.data_loader = data_loader
         self.transform_output = transform_output
-        self.samples_num = len(data_loader)
-        self.keypoints = None
+        self.num_samples = num_samples  # need to be exact total calculated using len(test_set)
+        
+        self.keypoints = None # pred_mm_not_centered
+        self.keypoints_gt = None # gt_mm_not_centered
         self.idx = 0
     
     def __call__(self, data_batch):
-        inputs_batch, outputs_batch, extra_batch = data_batch
-        outputs_batch = outputs_batch.cpu().numpy()
-        refpoints_batch = extra_batch.cpu().numpy()
+        ## this function is called when we need to calculate final output error
+        
+        ### load data straight from disk, y & CoM is loaded straight from the test_loader
+        ## x, pred_std_centered, gt_mm_not_centered, CoM = data_batch
 
-        keypoints_batch = self.transform_output(outputs_batch, refpoints_batch)
+        # the first component is input_batch don't need this for now
+        # cen => centered i.e. w.r.t CoM
+        # nc => not centered i.e. w.r.t focal point of image i.e. similar to gt
+        _, pred_std_cen_batch, gt_mm_nc_batch, com_batch = data_batch
+        
+        pred_std_cen_batch = pred_std_cen_batch.cpu().numpy()
+        gt_mm_nc_batch = gt_mm_nc_batch.cpu().numpy()
+        com_batch = com_batch.cpu().numpy()
+
+        # an important transformer
+        pred_mm_nc_batch = self.transform_output((pred_std_cen_batch, com_batch))
+
+        #print("pred_mm_nc (min, max): (%0f, %0f)\t gt_mm_nc (min, max): (%0f, %0f)" % \
+        #        (pred_mm_nc_batch.min(), pred_mm_nc_batch.max(), gt_mm_nc_batch.min(), gt_mm_nc_batch.max()))
+        
+        ## Note we will have a problem if we have >1 num_batches
+        ## and last batch is incomplete, ideally in that case
 
         if self.keypoints is None:
-            # Initialize keypoints until dimensions awailable now
-            self.keypoints = np.zeros((self.samples_num, *keypoints_batch.shape[1:]))
+            # Initialize keypoints until dimensions available now
+            self.keypoints = np.zeros((self.num_samples, *pred_mm_nc_batch.shape[1:]))
+        if self.keypoints_gt is None:
+            # Initialize keypoints until dimensions available now
+            self.keypoints_gt = np.zeros((self.num_samples, *gt_mm_nc_batch.shape[1:]))
 
-        batch_size = keypoints_batch.shape[0] 
-        self.keypoints[self.idx:self.idx+batch_size] = keypoints_batch
+        batch_size = pred_mm_nc_batch.shape[0] 
+        self.keypoints[self.idx:self.idx+batch_size] = pred_mm_nc_batch
+        self.keypoints_gt[self.idx:self.idx+batch_size] = gt_mm_nc_batch
         self.idx += batch_size
 
     def get_result(self):
+        ## this will just return predicted keypoints
         return self.keypoints
+
+    
+    def calc_avg_3D_error(self, ret_avg_err_per_joint=False):
+        ## use self.keypoints for model's results
+        ## use self.keypoints_gt for gt results
+
+        ## R^{500, 21, 3} - R^{500, 21, 3} => R^{500, 21, 3} err
+        ## R^{500, 21, 3} == avg_err_per_joint ==> R^{500, 21} <-- do avg of x,y,z errors
+        err_per_joint = np.abs(self.keypoints - self.keypoints_gt).mean(axis=2)
+
+        ## R^{500, 21} == avg_err_across_dataset ==> R^{21}
+        ## do avg for each joint over errors of all samples
+        avg_err_per_joint = err_per_joint.mean(axis=0)
+
+        ## R^{21} == avg_err_across_joints ==> R
+        avg_3D_err = avg_err_per_joint.mean()
+
+        if ret_avg_err_per_joint:
+            return avg_3D_err, avg_err_per_joint
+        else:
+            return avg_3D_err
+
+        ## for each test frame
+        ## calc abs mm error to get error matrix
+        ## which is R^{21x3}
+        ## each row is error of one joint
+        ## each col is x,y & z error respectively.
+        ## now reduce x,y,z error to single val
+        ## so error is R^{21}
+        ## now reduce this dataset matrix of
+        ## R^{Nx21} where N is test size to
+        ## R^{21} to get avg error of each joint
+        ## FINALLY if needed avg R^{21} -> R^{1}
+        ## to get avg 3D error

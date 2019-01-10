@@ -35,7 +35,7 @@ def val_epoch(model, criterion, val_loader, device=torch.device('cuda'), dtype=t
             loss = criterion(outputs, targets)
 
             val_loss += loss.item()
-            progress_bar(batch_idx, len(val_loader), 'Loss: {0:.4e}'.format(val_loss/(batch_idx+1)))
+            progress_bar(batch_idx, len(val_loader), 'Val Loss: {0:.4e}'.format(val_loss/(batch_idx+1)))
             #print('loss: {0: .4e}'.format(val_loss/(batch_idx+1)))
 
 
@@ -43,6 +43,17 @@ def test_epoch(model, test_loader, result_collector, device=torch.device('cuda')
     model.eval()
 
     with torch.no_grad():
-        for batch_idx, (inputs, extra) in enumerate(test_loader):
-            outputs = model(inputs.to(device, dtype))
-            result_collector((inputs, outputs, extra))
+        for batch_idx, (inputs, targets, extra) in enumerate(test_loader):
+            ## test_loader should have a final transformer which returns 
+            ## `y_gt_mm_not_centered` i.e. straight from dataset
+            ## `x_cropped_scaled` i.e. no aug but perform crop based on CoM (from dataset) and scale according
+            ## to the model requirements i.e 128x128
+            ## `CoM point` <-- this will be used to recover back y_pred_mm_not_centered
+            # y_pred_std_centered # in mm but standardised
+            # values are i.e. [-1, 1]
+            ## need special function forward eval to now also pass through last pca layer ans get back
+            ## 1, 63  instead of 1, 30
+            outputs = model.forward_eval(inputs.to(device, dtype))
+
+            # result college will convert y -> 
+            result_collector((inputs, outputs, targets, extra))
