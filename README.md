@@ -50,3 +50,5 @@ See `datasets/README.md` for details on the required datasets.
 
 ## Other
 See `doc/notes.md` for more details (currently in rough / needs cleanup)
+
+[Progress Doc](https://imperiallondon-my.sharepoint.com)
