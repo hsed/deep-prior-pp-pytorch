@@ -34,6 +34,10 @@ def parse_args():
         help='resume after epoch ID')
     parser.add_argument('--epochs', '-e', metavar='NUMEPOCHS', default=3, type=int,
         help='num epochs (max_epoch_id + 1)')
+    parser.add_argument('--reduced-dataset', '-rd', action='store_true',
+        help='use a reduced dataset, only for testing')
+    parser.add_argument('--refined-com', '-rc', action='store_true',
+        help='use com from refineNet stored in txt files')
     args = parser.parse_args()
     return args
 
@@ -52,7 +56,7 @@ def save_keypoints(filename, keypoints):
 def main():    
     #######################################################################################
     ## Configurations
-    print('Warning: disable cudnn for batchnorm first, or just use only cuda instead!')
+    #print('Warning: disable cudnn for batchnorm first, or just use only cuda instead!')
     np.random.seed(1)
     torch.manual_seed(1)
     torch.cuda.manual_seed(1)
@@ -82,6 +86,15 @@ def main():
     IMGSZ_PX = 128 
     CROPSZ_MM = 200
 
+    if args.reduced_dataset: print("Warning: Using reduced dataset for training.")
+    if args.refined_com: print("Warning: Using refined CoM references for training.")
+
+    ### common kwargs for MSRADataset
+    MSRA_KWARGS = {
+        'reduce': args.reduced_dataset,
+        'use_refined_com': args.refined_com
+    }
+
     ######################################################################################
     ## Transforms
     # use default crop sizes 200mm
@@ -105,7 +118,7 @@ def main():
         # each sample is 1x21x3 so we use cat to make it 3997x21x3
         # id we use stack it intriduces a new dim so 3997x1x21x3
         # load all y_sample sin tprch array
-        y_set = MARAHandDataset(DATA_DIR, CENTER_DIR, 'train', TEST_SUBJ_ID, transform_y)
+        y_set = MARAHandDataset(DATA_DIR, CENTER_DIR, 'train', TEST_SUBJ_ID, transform_y, **MSRA_KWARGS)
         y_loader = torch.utils.data.DataLoader(y_set, batch_size=1, shuffle=True, num_workers=4)
         print('==> Collating y_samples for PCA ..')
         y_train_samples = torch.cat(tuple(y_loader))
@@ -143,7 +156,7 @@ def main():
     print('==> Preparing data ..')
     ## dataset returns np array samples ; dataloader returns torch samples and also shuffled
     train_set = MARAHandDataset(DATA_DIR, CENTER_DIR, 'train', TEST_SUBJ_ID,
-                                transforms.Compose([transform_train,transform_pca]))
+                                transforms.Compose([transform_train,transform_pca]), **MSRA_KWARGS)
     ## set here collate_fn as convert to pca
     ## there is some problem here basically we can't parallelize the transformers so 
     ## if u use num_workers=4 it just gives NaN results
@@ -165,7 +178,7 @@ def main():
     # we'll fix this afterwards...
     val_set = MARAHandDataset(DATA_DIR, CENTER_DIR, 
                                 'test', TEST_SUBJ_ID,
-                                transforms.Compose([transform_train,transform_pca]))
+                                transforms.Compose([transform_train,transform_pca]), **MSRA_KWARGS)
     # print("ValSetSz: ", len(val_set))
     ## for validation batch size doesn't matter as we don't train, only calc error
     val_loader = torch.utils.data.DataLoader(val_set, batch_size=512, shuffle=False, num_workers=4)#6
@@ -254,7 +267,8 @@ def main():
 
     # currently our test_set === val_set !! TODO: change this
     # print('Test on test dataset ..')
-    test_set = MARAHandDataset(DATA_DIR, CENTER_DIR, 'test', TEST_SUBJ_ID, transform=transform_test)
+    test_set = MARAHandDataset(DATA_DIR, CENTER_DIR, 'test', TEST_SUBJ_ID,
+                                transform=transform_test, **MSRA_KWARGS)
 
     ## increaase batch size and workers for fastr (parallel) calc in future
     ## forget batch~_size for now as addition of com_Batch doesnt work properly#
