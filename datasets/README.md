@@ -42,5 +42,5 @@ datasets/
 ### Downloading Dataset
 ```
 $> wget -O MSRA15.zip "https://www.dropbox.com/s/c91xvevra867m6t/cvpr15_MSRAHandGestureDB.zip?dl=1"
-$> wget -O MSRA15_center.zip "https://cv.snu.ac.kr/research/V2V-PoseNet/MSRA/center/center.tar.gz"
+$> wget -O MSRA15_center.tar.gz "https://cv.snu.ac.kr/research/V2V-PoseNet/MSRA/center/center.tar.gz"
 ```
