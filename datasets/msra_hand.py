@@ -93,7 +93,12 @@ def load_depthmap(filename, img_width, img_height, max_depth):
 
 
 class MARAHandDataset(Dataset):
-    def __init__(self, root, center_dir, mode, test_subject_id, transform=None):
+    def __init__(self, root, center_dir, mode, test_subject_id, transform=None, reduce=False,
+                 use_refined_com=False):
+        '''
+            `reduce` => Train only on 1 gesture and 2 subjects, CoM won't work correctly
+            `use_refined_com` => True: Use GT MCP (ID=5) ref; False: Use refined CoM pretrained.
+        '''
         self.img_width = 320
         self.img_height = 240
         self.min_depth = 100
@@ -102,14 +107,16 @@ class MARAHandDataset(Dataset):
         self.fy = 241.42
         self.joint_num = 21
         self.world_dim = 3
-        self.folder_list = ['1'] #['1','2','3','4','5','6','7','8','9','I','IP','L','MP','RP','T','TIP','Y']
-        self.subject_num = 3 ## 9 ## number of subjects  # reduced for faster training
+        self.folder_list = ['1'] if reduce else \
+            ['1','2','3','4','5','6','7','8','9','I','IP','L','MP','RP','T','TIP','Y']
+        self.subject_num = 3 if reduce else 9 ## number of subjects
 
         self.root = root
         self.center_dir = center_dir
         self.mode = mode
         self.test_subject_id = test_subject_id ## do testing using this ID's data
         self.transform = transform
+        self.use_refined_com = use_refined_com
 
         if not self.mode in ['train', 'test']: raise ValueError('Invalid mode')
         assert self.test_subject_id >= 0 and self.test_subject_id < self.subject_num
@@ -118,7 +125,6 @@ class MARAHandDataset(Dataset):
         
         ### load all the y_values and corresponding corrected CoM values using
         ### 'train.txt' and 'center_train_refined'
-
         self._load()
     
     def __getitem__(self, index):
@@ -129,18 +135,20 @@ class MARAHandDataset(Dataset):
         
         ## Note: For deep-prior we DO NOT want to do this.
         ## are input should remain as 2D img with depth values
-        points = depthmap2points(depthmap, self.fx, self.fy)
+        ## points = depthmap2points(depthmap, self.fx, self.fy)
         
         ## originally points are (240,320, 3)
         ## later they are reshaped to (240*320==76800, 3)
-        points = points.reshape((-1, 3))
+        ## points = points.reshape((-1, 3))
+
+        #self.ref_pts[index], # 3d ref point of centre of mass, this is the REFINED CoM points
+        refpt = self.joints_world[index][5] if not self.use_refined_com else self.ref_pts[index]
 
         sample = {
             'name': self.names[index], # sample name
-            'points': points, # 3d points of the sample i.e. 3d point cloud view.
+            #'points': points, # 3d points of the sample i.e. 3d point cloud view. unneeded atm
             'joints': self.joints_world[index], # 3d joints of the sample
-            #### new changed!! use gt labels
-            'refpoint': self.joints_world[index][5],#self.ref_pts[index], # 3d ref point of centre of mass, this is the REFINED CoM points
+            'refpoint': refpt,
             'depthmap': depthmap, # also send the depth map as sample
         }
 
