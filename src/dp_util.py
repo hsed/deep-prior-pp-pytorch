@@ -624,8 +624,8 @@ class DeepPriorBatchResultCollector():
         ## use self.keypoints_gt for gt results
 
         ## R^{500, 21, 3} - R^{500, 21, 3} => R^{500, 21, 3} err
-        ## R^{500, 21, 3} == avg_err_per_joint ==> R^{500, 21} <-- do avg of x,y,z errors
-        err_per_joint = np.abs(self.keypoints - self.keypoints_gt).mean(axis=2)
+        ## R^{500, 21, 3} == l2_err_dist_per_joint ==> R^{500, 21} <-- find euclidian dist btw gt and pred
+        err_per_joint = np.linalg.norm(self.keypoints - self.keypoints_gt, ord=2, axis=2)
 
         ## R^{500, 21} == avg_err_across_dataset ==> R^{21}
         ## do avg for each joint over errors of all samples
@@ -640,11 +640,11 @@ class DeepPriorBatchResultCollector():
             return avg_3D_err
 
         ## for each test frame
-        ## calc abs mm error to get error matrix
+        ## calc euclidian dist for each joint's 3D vector between pred and gt to get error matrix
         ## which is R^{21x3}
         ## each row is error of one joint
         ## each col is x,y & z error respectively.
-        ## now reduce x,y,z error to single val
+        ## now reduce x,y,z error to single val using euc. dist aka norm
         ## so error is R^{21}
         ## now reduce this dataset matrix of
         ## R^{Nx21} where N is test size to

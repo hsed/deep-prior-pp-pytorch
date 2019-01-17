@@ -14,7 +14,7 @@ import os
 
 from torchvision import transforms
 
-from lib.solver import train_epoch, val_epoch, test_epoch
+from lib.solver import train_epoch, val_epoch, test_epoch, test_epoch_dropout
 from lib.sampler import ChunkSampler
 
 from datasets.msra_hand import MARAHandDataset
@@ -30,8 +30,10 @@ from src.dp_util import DeepPriorXYTransform, DeepPriorXYTestTransform, \
 def parse_args():
     parser = argparse.ArgumentParser(description='PyTorch Hand Keypoints Estimation Training')
     #parser.add_argument('--resume', 'r', action='store_true', help='resume from checkpoint')
-    parser.add_argument('--resume', '-r', default=-1, type=int, help='resume after epoch')
-    parser.add_argument('--epochs', '-e', default=3, type=int, help='num epochs')
+    parser.add_argument('--resume', '-r', metavar='EPOCHID', default=-1, type=int,
+        help='resume after epoch ID')
+    parser.add_argument('--epochs', '-e', metavar='NUMEPOCHS', default=3, type=int,
+        help='num epochs (max_epoch_id + 1)')
     args = parser.parse_args()
     return args
 
@@ -215,7 +217,7 @@ def main():
         epoch = resume_after_epoch
         checkpoint_file = os.path.join(checkpoint_dir, 'epoch'+str(epoch)+'.pth')
 
-        print('==> Resuming from checkpoint after epoch {} ..'.format(epoch))
+        print('==> Resuming from checkpoint after epoch id {} ..'.format(epoch))
         assert os.path.isdir(checkpoint_dir), 'Error: no checkpoint directory found!'
         assert os.path.isfile(checkpoint_file), 'Error: no checkpoint file of epoch {}'.format(epoch)
 
@@ -259,13 +261,22 @@ def main():
     ## its (500,21,3) + (500,3)
     ## need to use np.repeat to make com (500,3) -> (500,21,3)
     ## ensure error is same regardless of batch size!! --> correct upto 1e-6
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=512, shuffle=False, num_workers=4)
+    dropout = False
+
+    if dropout:
+        test_loader = \
+            torch.utils.data.DataLoader(test_set, batch_size=1, shuffle=False, num_workers=4)
+    else:
+        test_loader = \
+            torch.utils.data.DataLoader(test_set, batch_size=512, shuffle=False, num_workers=4)
     test_res_collector = DeepPriorBatchResultCollector(test_loader, transform_output, len(test_set))
-
-    test_epoch(net, test_loader, test_res_collector, device, dtype)
-    keypoints_test = test_res_collector.get_result()
+    
+    if not dropout:
+        test_epoch(net, test_loader, test_res_collector, device, dtype)
+    else:
+        test_epoch_dropout(net, test_loader, test_res_collector, device, dtype)
+    #keypoints_test = test_res_collector.get_result()
     # save_keypoints('./test_res.txt', keypoints_test)
-
 
     # print('Fit on train dataset ..')
     # fit_set = MARAHandDataset(DATA_DIR, CENTER_DIR, 'train', TEST_SUBJ_ID, transform_test)
