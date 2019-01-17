@@ -95,6 +95,9 @@ def main():
         'use_refined_com': args.refined_com
     }
 
+    ### fix for linux filesystem
+    torch.multiprocessing.set_sharing_strategy('file_system')
+
     ######################################################################################
     ## Transforms
     # use default crop sizes 200mm
