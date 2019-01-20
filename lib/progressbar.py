@@ -5,7 +5,7 @@ import time
 
 _, term_width = os.popen('stty size', 'r').read().split()
 term_width = int(term_width)
-TOTAL_BAR_LENGTH = 65.
+TOTAL_BAR_LENGTH = 40.
 last_time = time.time()
 begin_time = last_time
 
@@ -33,6 +33,7 @@ def progress_bar(current, total, msg=None):
     L = []
     L.append('  Step: %s' % format_time(step_time))
     L.append(' | Tot: %s' % format_time(tot_time))
+    L.append(' | ETA: %s' % format_time(rest_len*(tot_time/(cur_len+1e-6))))
     if msg:
         L.append(' | ' + msg)
 
