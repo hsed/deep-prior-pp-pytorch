@@ -37,6 +37,8 @@ def parse_args():
         help='resume after epoch ID')
     parser.add_argument('--epochs', '-e', metavar='NUMEPOCHS', default=3, type=int,
         help='num epochs (max_epoch_id + 1)')
+    parser.add_argument('--device_id', '-d', metavar='GPUID', default=0, type=int,
+        choices=range(4), help='GPU Device ID for multi GPU system')
     parser.add_argument('--reduced-dataset', '-rd', action='store_true',
         help='use a reduced dataset, only for testing')
     parser.add_argument('--refined-com', '-rc', action='store_true',
@@ -66,7 +68,8 @@ def main():
     torch.manual_seed(1)
     torch.cuda.manual_seed(1)
 
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    device = torch.device('cuda%d' % args.device_id) if torch.cuda.is_available() \
+                else torch.device('cpu')
     dtype = torch.float
 
     #
