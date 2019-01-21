@@ -68,12 +68,14 @@ def main():
     torch.manual_seed(1)
     torch.cuda.manual_seed(1)
 
+    args = parse_args()
+
     device = torch.device('cuda%d' % args.device_id) if torch.cuda.is_available() \
                 else torch.device('cpu')
     dtype = torch.float
 
     #
-    args = parse_args()
+    
     resume_train = args.resume >= 0
     resume_after_epoch = args.resume
 
