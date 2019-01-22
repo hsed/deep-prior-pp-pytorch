@@ -61,7 +61,7 @@ def test_epoch(model, test_loader, result_collector, device=torch.device('cuda')
             # result college will convert y ->
             result_collector((inputs, outputs, targets, extra))
 
-            progress_bar(batch_idx*test_loader.batch_size, len(test_loader))
+            progress_bar(batch_idx, len(test_loader))
 
 
 def test_epoch_dropout(model, test_loader, result_collector, device=torch.device('cuda'), dtype=torch.float, output_rate=10):
@@ -93,4 +93,4 @@ def test_epoch_dropout(model, test_loader, result_collector, device=torch.device
 			# result college will convert y -> 
 			result_collector((inputs, output_mean, targets, extra))
 
-			progress_bar(batch_idx*test_loader.batch_size, len(test_loader))
+			progress_bar(batch_idx, len(test_loader))
