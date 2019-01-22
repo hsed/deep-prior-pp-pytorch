@@ -118,16 +118,20 @@ def cropDepth2D(depth_img, com_px, fx, fy, crop3D_mm=(200, 200, 200), out2D_px =
     # the edge closest to us is max value, nothing comes closer.
     cropped = getCrop(depth_img, xstart, xend, ystart, yend, zstart, zend)
     cropped_resized = resizeCrop(cropped, out2D_px)
-    transform_matx = get2DTransformMatx(xstart, ystart, cropped.shape, out2D_px)
+    transform_matx = get2DTransformMatx(xstart, xend, ystart, yend, out2D_px)
 
     assert(out2D_px[0] == out2D_px[1])    # only 1:1 supported for now
 
     return cropped_resized, transform_matx
 
 
-def get2DTransformMatx(xstart, ystart, cropped_shape, out_size_2D):
+def get2DTransformMatxOld(xstart, ystart, cropped_shape, out_size_2D):
     # useful for translation matrix for translating y_real_world2d_px coords to relative to CoM
-    # doesn't work with data aug
+    # doesn't work with anything that requires out_size_w =/= out_size_h
+    # in that case we need some extra lines ... seee comTotransform
+
+    assert out_size_2D[0] == out_size_2D[1], "Error: Currently only 1:1 crops are supported"
+
     trans = np.eye(3)
     trans[0, 2] = -xstart
     trans[1, 2] = -ystart
@@ -143,6 +147,41 @@ def get2DTransformMatx(xstart, ystart, cropped_shape, out_size_2D):
 
     return np.array(np.dot(off, np.dot(scale, trans)), dtype=np.float32)
 
+def get2DTransformMatx(xstart, xend, ystart, yend, out_size_2D):
+        """
+        Calculate affine transform from crop
+        Get xstart,end ystart,end from comToBounds Fn
+        :param com: center of mass, in image coordinates (x,y,z), z in mm
+        :param size: (x,y,z) extent of the source crop volume in mm
+        :return: affine transform
+
+        This is the proper version which also handles non 1:1 crop case 
+        It is equivalent to above function in other cases
+        """
+
+
+        trans = np.eye(3)
+        trans[0, 2] = -xstart
+        trans[1, 2] = -ystart
+
+        wb = (xend - xstart)
+        hb = (yend - ystart)
+        if wb > hb:
+            scale = np.eye(3) * out_size_2D[0] / float(wb)
+            sz = (out_size_2D[0], hb * out_size_2D[0] / wb)
+        else:
+            scale = np.eye(3) * out_size_2D[1] / float(hb)
+            sz = (wb * out_size_2D[1] / hb, out_size_2D[1])
+        scale[2, 2] = 1
+
+        # usually 0 if out_sz_2D[0] == out_sz_2D[1]
+        xstart_new = int(np.floor(out_size_2D[0] / 2. - sz[1] / 2.))
+        ystart_new = int(np.floor(out_size_2D[1] / 2. - sz[0] / 2.))
+        off = np.eye(3)
+        off[0, 2] = xstart_new
+        off[1, 2] = ystart_new
+
+        return np.array(np.dot(off, np.dot(scale, trans)), dtype=np.float32)
 
 def affineTransform2D(M, X):
     '''
@@ -211,6 +250,30 @@ def affineTransformImg(M, dpt, resize_method=cv2.INTER_NEAREST,
     else:
         raise AssertionError("Error: M must be of shape (2,3) or (3,3)")
 
+def perspectiveTransformImg(dpt_crop, M, target_size, crop_sz_3D, zstart, zend,
+                resize_method=cv2.INTER_NEAREST,
+                background_value=0., nv_val=0., thresh_z=True, com=None):
+        '''
+            Transform an already cropped hand to new shape using a transf matrix
+            Useful for scale and translate transforms that can't just use the warpAffine method
+            Instead the warpperspective method is needed
+            
+            aka recrop hand
+        '''
+
+        warped = cv2.warpPerspective(dpt_crop, M, target_size, flags=resize_method,
+                                    borderMode=cv2.BORDER_CONSTANT, 
+                                    borderValue=float(background_value))
+        warped[np.isclose(warped, nv_val)] = background_value
+
+        if thresh_z is True:
+            assert com is not None
+            msk1 = np.logical_and(warped < zstart, warped != 0)
+            msk2 = np.logical_and(warped > zend, warped != 0)
+            warped[msk1] = zstart
+            warped[msk2] = 0.  # backface is at 0, it is set later
+
+        return warped
 
 def cropHand2D(dpt_orig, keypt_px_orig, com_px_orig, fx, fy,
                 crop3D_mm=(200, 200, 200),  out2D_px = (128, 128)):
@@ -276,14 +339,16 @@ def scaleHand2D(dpt, keypt_px, com_px, sf,
         pass
     
 
-def translateHand2D(dpt_orig, keypt_px, com_px, keypt_mm, com_mm, off, fx, fy,
+def translateHand2D(dpt, keypt_px, com_px, com_mm_orig, off, fx, fy,
+                crop_transf_matx, mm2pxFn, crop3D_mm,
                resize_method=cv2.INTER_NEAREST, pad_value=0, dpt_crop_shape=(128,128)):
         if np.allclose(off, 0.):
             return dpt_orig, keypt_px, com_px, np.eye(3, dtype=np.float32)
 
-        com_mm_aug = com_mm + off
+        com_mm_orig_aug = com_mm_orig + off
+        com_px_aug = mm2pxFn(com_mm_orig_aug)
 
-        if not (np.allclose(com[2], 0.) or np.allclose(new_com[2], 0.)):
+        if not (np.allclose(mm2pxFn(com_mm_orig)[2], 0.) or np.allclose(com_px_aug[2], 0.)):
             ### main idea,,, we need to simply recrop the original image 
             ### but this time with new com value
             ### also in the end transform using appropriate transform the keypt_mm
@@ -294,10 +359,25 @@ def translateHand2D(dpt_orig, keypt_px, com_px, keypt_mm, com_mm, off, fx, fy,
             ### the only problem is now that our augmentation matrix is a combination
             ### of tw transforms
 
-            ### Need M_aug
-            dpt_crop_aug, crop_aug_transf = \
-                cropDepth2D(dpt_orig, com_px_orig, fx=fx, fy=fy, 
-                            crop3D_mm=crop_vol_mm, out2D_px=out_sz_px)           
+            xstart, xend, ystart, yend, zstart, zend = comToBounds(com_px_aug, crop3D_mm, fx, fy)
+
+            ### includes both crop tranf AND aug translation transf
+            crop_aug_transf_matx = get2DTransformMatx(xstart, xend, ystart, yend, dpt_crop_shape)
+
+            # we must undo the 'effect' of translating due to cropping
+            # as we only need translation due to augmentation
+            # this tried to do that
+            M = np.matmul(np.linalg.inv(crop_transf_matx), crop_aug_transf_matx)
+
+            dpt_aug = perspectiveTransformImg(dpt, M, dpt_crop_shape, crop3D_mm, zstart, zend, 
+                                    background_value=pad_value, nv_val=32000., 
+                                    thresh_z=True, com=com_mm_orig_aug)
+            
+            com_px_aug = affineTransform2D(M, com_px)
+            keypt_px_aug = affineTransform2D(M, keypt_px)
         else:
-            Mnew = np.eye(3, dtype=np.float32)
-            new_dpt = dpt
+            raise RuntimeError("com_z_val must not be near 0!")
+        
+        ## No need to send com_mm_orig_aug as this is auto calc from px2mm(com_px_orig_aug) step when we return
+        return dpt_aug, keypt_px_aug, com_px_aug, M
+

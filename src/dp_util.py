@@ -54,7 +54,7 @@ def unStandardiseKeyPoints(keypoints_std, crop_dpt_mm, copy_arr=False):
     return keypoints_std * (crop_dpt_mm / 2.)
 
 def plotImg(dpt_orig, dpt_crop, keypt_px_orig, com_px_orig, 
-            dpt_orig_aug=None, dpt_crop_aug=None, crop_tranf_matx=None, 
+            dpt_orig_aug=None, dpt_crop_aug=None, crop_transf_matx=None, 
             aug_transf_matx=None, aug_mode=None, aug_val=None):
     '''
         All matrices supplied are homogenous projection matrix must work with
@@ -71,8 +71,8 @@ def plotImg(dpt_orig, dpt_crop, keypt_px_orig, com_px_orig,
     ax.plot(keypt_px_orig[:,0], keypt_px_orig[:, 1], marker='.', linewidth=0) ## remove line...
     ax.set_title("Original")
     
-    com_px_crop = affineTransform2D(crop_tranf_matx, com_px_orig)
-    keypt_px_crop = affineTransform2D(crop_tranf_matx, keypt_px_orig)
+    com_px_crop = affineTransform2D(crop_transf_matx, com_px_orig)
+    keypt_px_crop = affineTransform2D(crop_transf_matx, keypt_px_orig)
 
     ax2 = fig.add_subplot(222)
     ax2.imshow(dpt_crop, cmap=cmap.jet)
@@ -100,7 +100,8 @@ def plotImg(dpt_orig, dpt_crop, keypt_px_orig, com_px_orig,
         if dpt_orig_aug is None:
             dpt_orig_aug = affineTransformImg(aug_transf_matx, dpt_orig)
 
-
+    if isinstance(aug_val, np.ndarray) == True:
+        aug_val = np.sum(aug_val)
 
     ax3 = fig.add_subplot(223)
     ax3.imshow(dpt_orig_aug, cmap=cmap.jet)
@@ -252,13 +253,13 @@ class DeepPriorXYTransform(object):
         ## required CoM in px value
         ## convert to 128x128 for network
         ## px_transform_matx for 2D transform of keypoints in px values
-        dpt_crop, crop_tranf_matx = cropDepth2D(
+        dpt_crop, crop_transf_matx = cropDepth2D(
                                                 dpt_orig, com_px_orig,
                                                 fx=self.fx, fy=self.fy,
                                                 crop3D_mm=crop_vol_mm,
                                                 out2D_px=out_sz_px
                                                 )
-        #print("Transform matrix:\n", crop_tranf_matx)
+        #print("Transform matrix:\n", crop_transf_matx)
         ## get keypoints relative to CoM
         ## flatteny to get (21*3,) 1d array
         #keypt_mm_crop = keypt_mm_orig - com_mm_orig
@@ -274,7 +275,7 @@ class DeepPriorXYTransform(object):
                     else abs(1. + np.random.randn() * self.sc_std) \
                     if aug_mode is AugType.AUG_SC \
                     else (np.random.randn(3) * self.tr_std) \
-                    if aug_mode is AugType.AUG_ROT \
+                    if aug_mode is AugType.AUG_TRANS \
                     else np.nan
         
         # notice we supply {dpt_crop, keypt_px_orig}, we need dpt_crop_aug
@@ -286,16 +287,18 @@ class DeepPriorXYTransform(object):
         (dpt_crop_aug, keypt_px_orig_aug, com_px_orig_aug, aug_transf_matx) = \
             (dpt_crop, keypt_px_orig, com_px_orig, np.eye(3, dtype=np.float32)) \
             if aug_mode is AugType.AUG_NONE \
-            else rotateHand2D(dpt_crop, keypt_px_orig, com_px_orig, aug_param) #\
-            ###if aug_mode is AugType.AUG_ROT ## use condition in future
+            else rotateHand2D(dpt_crop, keypt_px_orig, com_px_orig, aug_param) \
+            if aug_mode is AugType.AUG_ROT \
+            else translateHand2D(dpt_crop, keypt_px_orig, com_px_orig, com_mm_orig, aug_param, 
+                                    self.fx, self.fy, crop_transf_matx, self.mm2px, crop_vol_mm) #\
 
         keypt_mm_crop_aug = self.px2mmMulti(keypt_px_orig_aug) - self.px2mm(com_px_orig_aug)
         
         ### debugging using plots ###
         ## final input (before std) is dpt_crop_aug
-        # plotImg(dpt_orig, dpt_crop, keypt_px_orig, com_px_orig, 
-        #         crop_tranf_matx=crop_tranf_matx, aug_transf_matx=aug_transf_matx,
-        #         aug_mode=aug_mode, aug_val=aug_param, dpt_crop_aug=dpt_crop_aug)
+        plotImg(dpt_orig, dpt_crop, keypt_px_orig, com_px_orig, 
+                crop_transf_matx=crop_transf_matx, aug_transf_matx=aug_transf_matx,
+                aug_mode=aug_mode, aug_val=aug_param, dpt_crop_aug=dpt_crop_aug)
 
         ### Standardisation ###
         ## This must be the last step always!

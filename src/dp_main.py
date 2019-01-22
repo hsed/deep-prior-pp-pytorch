@@ -70,7 +70,7 @@ def main():
 
     args = parse_args()
 
-    device = torch.device('cuda%d' % args.device_id) if torch.cuda.is_available() \
+    device = torch.device('cuda:%d' % args.device_id) if torch.cuda.is_available() \
                 else torch.device('cpu')
     dtype = torch.float
 
@@ -96,7 +96,7 @@ def main():
     IMGSZ_PX = 128 
     CROPSZ_MM = 200
 
-    AUG_MODES = [AugType.AUG_NONE, AugType.AUG_ROT]#[AugType.AUG_ROT] # [None]
+    AUG_MODES = [AugType.AUG_NONE, AugType.AUG_ROT, AugType.AUG_TRANS]#[AugType.AUG_ROT] # [None]
 
     ### if refined_com: TODO: save/load pca with different name!s
     if args.reduced_dataset: print("Warning: Using reduced dataset for training.")
@@ -121,8 +121,9 @@ def main():
                                            aug_mode_lst=AUG_MODES)
     # its equivalent as train transformer escept for augmentation
     transform_val = DeepPriorXYTransform(depthmap_px=IMGSZ_PX, crop_len_mm=CROPSZ_MM,
-                                           aug_mode_lst=[None])
-    transform_test = DeepPriorXYTestTransform(depthmap_px=IMGSZ_PX, crop_len_mm=CROPSZ_MM)
+                                           aug_mode_lst=[AugType.AUG_NONE])
+    transform_test = DeepPriorXYTestTransform(depthmap_px=IMGSZ_PX, crop_len_mm=CROPSZ_MM,
+                                              aug_mode_lst=[AugType.AUG_NONE])
 
     # used for pca_calc
     transform_y = DeepPriorYTransform(crop_dpt_mm=CROPSZ_MM)
