@@ -33,6 +33,8 @@ from src.dp_util import DeepPriorXYTransform, DeepPriorXYTestTransform, \
 def parse_args():
     parser = argparse.ArgumentParser(description='PyTorch Hand Keypoints Estimation Training')
     #parser.add_argument('--resume', 'r', action='store_true', help='resume from checkpoint')
+    parser.add_argument('--checkpoint', '-c', metavar='*.PTH', type=str,
+        help='point to a custom checkpoint file to load')
     parser.add_argument('--resume', '-r', metavar='EPOCHID', default=-1, type=int,
         help='resume after epoch ID')
     parser.add_argument('--epochs', '-e', metavar='NUMEPOCHS', default=3, type=int,
@@ -74,8 +76,11 @@ def main():
                 else torch.device('cpu')
     dtype = torch.float
 
-    #
-    
+    # FROZEN_STATE
+    # True => Don't do training just load model from checkpoint and test out
+    # False resume, don't resume etc.
+    FROZEN_STATE = (args.checkpoint is not None)
+
     resume_train = args.resume >= 0
     resume_after_epoch = args.resume
 
@@ -252,45 +257,54 @@ def main():
 
 
     #######################################################################################
-    ## Resume
-    if resume_train:
-        # Load checkpoint
-        epoch = resume_after_epoch
-        checkpoint_file = os.path.join(checkpoint_dir, 'epoch'+str(epoch)+'.pth')
-
-        print('==> Resuming from checkpoint after epoch id {} ..'.format(epoch))
-        assert os.path.isdir(checkpoint_dir), 'Error: no checkpoint directory found!'
-        assert os.path.isfile(checkpoint_file), 'Error: no checkpoint file of epoch {}'.format(epoch)
-
-        checkpoint = torch.load(os.path.join(checkpoint_dir, 'epoch'+str(epoch)+'.pth'))
+    ## Resume / FROZEN_STATE
+    if FROZEN_STATE:
+        # if frozen state is being loaded, don't do training!
+        checkpoint_file = args.checkpoint # load directly from cmd_line
+        print('==> Loading frozen state from checkpoint file {} ..'.format(os.path.basename(checkpoint_file))) 
+        checkpoint = torch.load(checkpoint_file)
         net.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        START_EPOCH = checkpoint['epoch'] + 1
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])       
 
-
-    #######################################################################################
-    ## Train and Validate
-    print('==> Training ..')
-    train_time = time.time()
-    # changed training_procedure so that if loaded epoch_id+1 = NUM_EPOCHS then don't train at all
-    # i.e. if we are to train 1 epoch and epoch_0 was loaded, no need to train further
-    for epoch in range(START_EPOCH, NUM_EPOCHS):
-        print('Epoch: {}'.format(epoch))
-        train_epoch(net, criterion, optimizer, train_loader, device=device, dtype=dtype)
-        val_epoch(net, criterion, val_loader, device=device, dtype=dtype)
-
-        # if ep_per_chkpt = 5, save as ep_id: 4, 9, 14, 19, 24, 29
-        if save_checkpoint and (epoch+1) % (EPOCHS_PER_CHECKPOINT) == 0:
-            if not os.path.exists(checkpoint_dir): os.mkdir(checkpoint_dir)
+    else:
+        if resume_train:
+            # Load checkpoint
+            epoch = resume_after_epoch
             checkpoint_file = os.path.join(checkpoint_dir, 'epoch'+str(epoch)+'.pth')
-            checkpoint = {
-                'model_state_dict': net.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'epoch': epoch
-            }
-            torch.save(checkpoint, checkpoint_file)
 
-    print("Training took: ", format_time(time.time() - train_time), '\n')
+            print('==> Resuming from checkpoint after epoch id {} ..'.format(epoch))
+            assert os.path.isdir(checkpoint_dir), 'Error: no checkpoint directory found!'
+            assert os.path.isfile(checkpoint_file), 'Error: no checkpoint file of epoch {}'.format(epoch)
+
+            checkpoint = torch.load(os.path.join(checkpoint_dir, 'epoch'+str(epoch)+'.pth'))
+            net.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            START_EPOCH = checkpoint['epoch'] + 1
+
+
+        #######################################################################################
+        ## Train and Validate
+        print('==> Training ..')
+        train_time = time.time()
+        # changed training_procedure so that if loaded epoch_id+1 = NUM_EPOCHS then don't train at all
+        # i.e. if we are to train 1 epoch and epoch_0 was loaded, no need to train further
+        for epoch in range(START_EPOCH, NUM_EPOCHS):
+            print('Epoch: {}'.format(epoch))
+            train_epoch(net, criterion, optimizer, train_loader, device=device, dtype=dtype)
+            val_epoch(net, criterion, val_loader, device=device, dtype=dtype)
+
+            # if ep_per_chkpt = 5, save as ep_id: 4, 9, 14, 19, 24, 29
+            if save_checkpoint and (epoch+1) % (EPOCHS_PER_CHECKPOINT) == 0:
+                if not os.path.exists(checkpoint_dir): os.mkdir(checkpoint_dir)
+                checkpoint_file = os.path.join(checkpoint_dir, 'epoch'+str(epoch)+'.pth')
+                checkpoint = {
+                    'model_state_dict': net.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'epoch': epoch
+                }
+                torch.save(checkpoint, checkpoint_file)
+
+        print("Training took: ", format_time(time.time() - train_time), '\n')
     #######################################################################################
     ## Test
     print('==> Testing ..')

@@ -39,18 +39,29 @@ Features present in this code:
 - [x] validation -- (**based on test_set_id only**)
 - [x] testing -- based on test_set_id
 - [x] avg 3D error calculation on test_set (using abs dist btw target & output keypoints)
+- [ ] Data Augmentation for training 
+  - [x] Using Rotation
+  - [x] Using Translation
+  - [ ] Using Scaling
 
 
 ### Not Implemented
 These features are present in original soruce code but not yet implemented here:
 
-- Data augmentation for training
 - Data augmentation for PCA
-- CoM detection aka Hand Detector
-- RefinedNet (for CoM refining)
+- CoM detection aka Hand Detector + RefineNet as pipeline
 - ScaleNet (aka multi-scale training)
 - % Error frames vs max 3D error
 - NYU, ICVL datasets
+
+## Results
+
+### Experimented
+~14mm error with CoM_refined labels + no augmentation
+~13.4938mm error with CoM_refined labels + rot+scale train aug
+
+### Target
+~9mm with PCA augmentation + rot+scale+trans augmentation
 
 ## Dataset
 See `datasets/README.md` for details on the required datasets.
