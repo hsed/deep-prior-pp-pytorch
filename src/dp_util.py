@@ -208,14 +208,14 @@ class DeepPriorXYTransform(object):
     '''
 
     def __init__(self, depthmap_px=128, crop_len_mm=200, abs_rot_lim_deg=180,
-                 scale_std=0.4, trans_std=5, aug_mode_lst = [AugType.AUG_NONE]):
-        self.augmentation = False
+                 fx = 241.42, fy = 241.42, ux = 160.0, uy = 120.0,
+                 scale_std=0.4, trans_std=5, aug_mode_lst = [AugType.AUG_NONE],
+                 debug_mode=False):
 
-        # TODO: make dynamic later as arg of class
-        self.fx = 241.42
-        self.fy = 241.42
-        self.ux = 160.0
-        self.uy = 120.0
+        self.fx = fx #241.42
+        self.fy = fy #241.42
+        self.ux = ux #160.0
+        self.uy = uy #120.0
 
         self.depthmap_px = depthmap_px
         self.crop_len_mm = crop_len_mm ## aka crop_sz_mm; its one side of a cube
@@ -225,6 +225,8 @@ class DeepPriorXYTransform(object):
         self.tr_std = trans_std
         #self.pca_transformer = pca_transformer
         self.aug_mode_lst = aug_mode_lst
+
+        self.debug_mode = debug_mode    # plot if in debug mode
 
     def __call__(self, sample):
         ### this function is called before reutrning a sample to transform the sample and corresponding
@@ -298,7 +300,9 @@ class DeepPriorXYTransform(object):
         ## final input (before std) is dpt_crop_aug
         plotImg(dpt_orig, dpt_crop, keypt_px_orig, com_px_orig, 
                 crop_transf_matx=crop_transf_matx, aug_transf_matx=aug_transf_matx,
-                aug_mode=aug_mode, aug_val=aug_param, dpt_crop_aug=dpt_crop_aug)
+                aug_mode=aug_mode, aug_val=aug_param, dpt_crop_aug=dpt_crop_aug) \
+                if self.debug_mode else None
+
 
         ### Standardisation ###
         ## This must be the last step always!

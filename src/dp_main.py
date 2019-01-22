@@ -95,6 +95,7 @@ def main():
     PCA_COMP = 30
     IMGSZ_PX = 128 
     CROPSZ_MM = 200
+    DEBUG_MODE = False
 
     AUG_MODES = [AugType.AUG_NONE, AugType.AUG_ROT, AugType.AUG_TRANS]#[AugType.AUG_ROT] # [None]
 
@@ -118,7 +119,7 @@ def main():
     transform_pca = PCATransform(n_components=PCA_COMP, use_cache=True, overwrite_cache=args.force_pca)
 
     transform_train = DeepPriorXYTransform(depthmap_px=IMGSZ_PX, crop_len_mm=CROPSZ_MM,
-                                           aug_mode_lst=AUG_MODES)
+                                           aug_mode_lst=AUG_MODES, debug_mode=DEBUG_MODE)
     # its equivalent as train transformer escept for augmentation
     transform_val = DeepPriorXYTransform(depthmap_px=IMGSZ_PX, crop_len_mm=CROPSZ_MM,
                                            aug_mode_lst=[AugType.AUG_NONE])
