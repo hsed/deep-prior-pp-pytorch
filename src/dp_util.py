@@ -3,15 +3,13 @@ import sys
 import multiprocessing
 import ctypes
 
-from enum import IntEnum
-
 import cv2
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cmap
 
-from dp_transform import *
+from dp_augment import *
 
 
 def standardiseImg(depth_img, com_dpt_mm, crop_dpt_mm, extrema=(-1,1), copy_arr=False):
@@ -101,21 +99,29 @@ def plotImg(dpt_orig, dpt_crop, keypt_px_orig, com_px_orig,
             dpt_orig_aug = affineTransformImg(aug_transf_matx, dpt_orig)
 
     if isinstance(aug_val, np.ndarray) == True:
-        aug_val = np.sum(aug_val)
+        aug_val = "(%0.2f, %0.2f, %0.2f)" % (aug_val[0], aug_val[1], aug_val[2])
+    elif isinstance(aug_val, float) == True:
+        aug_val = "%0.2f" % aug_val
 
     ax3 = fig.add_subplot(223)
     ax3.imshow(dpt_orig_aug, cmap=cmap.jet)
     ax3.plot(com_px_orig_aug[0], com_px_orig_aug[1], 'kx')
     ax3.plot(keypt_px_orig_aug[:,0], keypt_px_orig_aug[:,1], 'g.')
-    ax3.set_title("Orig + " + aug_mode.name + " (Val: %0.2f)" % aug_val)
+    ax3.set_title("Orig + " + aug_mode.name + "\n(Val: %s)" % aug_val)
 
     ax4 = fig.add_subplot(224)
     ax4.imshow(dpt_crop_aug, cmap=cmap.jet)
     ax4.plot(com_px_crop_aug[0], com_px_crop_aug[1], 'kx')
     ax4.plot(keypt_px_crop_aug[:,0], keypt_px_crop_aug[:,1], 'g.')
-    ax4.set_title("Cropped + " + aug_mode.name + " (Val: %0.2f) = Final" % aug_val)
+    ax4.set_title("Cropped + " + aug_mode.name + "\n(Val: %s) = Final" % aug_val)
     
-    print("\nCom_Orig: ", com_px_orig, "\nCom_Crop: ", com_px_crop, "\nCom_Crop_Aug: ", com_px_crop_aug)
+    print("\nCom_Orig: ", com_px_orig, "\nCom_Crop: ", com_px_crop,
+          "\nCom_Crop_Aug: ", com_px_crop_aug,
+          "\nKeyPt_Crop_Aug_XY: Max => %0.2f, Min => %0.2f" % 
+              ((keypt_px_crop_aug[:,:2]).max(), (keypt_px_crop_aug[:,:2]).min()))
+
+    # if (keypt_px_crop_aug > dpt_crop_aug.shape[0]).any() or (keypt_px_crop_aug < 0).any():
+    #     print("Warning: Keypoints trasformed to outside image region!")
 
     plt.tight_layout()
     plt.show()
@@ -168,29 +174,6 @@ class DeepPriorYInverseTransform(object):
             (unStandardiseKeyPoints(pred_std_cen_batch, self.crop_dpt_mm) + com_batch)
 
 
-# class DeepPriorYInverseTransform(object):
-#     '''
-#         Quick transformer for y-vals only (keypoint)
-#         Centers (w.r.t CoM in dB) and standardises (-1,1) y
-#         y-val -> center
-#     '''
-#     def __init__(self, crop_dpt_mm=200):
-#         self.crop_dpt_mm = crop_dpt_mm
-    
-#     def __call__(self, sample):
-#         return \
-#             standardiseKeyPoints(sample['joints'] - sample['refpoint'], self.crop_dpt_mm).flatten()
-
-
-class AugType(IntEnum):
-    '''
-        For any given sample, only one of 3 possible augs are applied
-        or even no augs applied.
-    '''
-    AUG_NONE = 0
-    AUG_ROT = 1
-    AUG_SC = 2
-    AUG_TRANS = 3
 
 
 
@@ -206,10 +189,9 @@ class DeepPriorXYTransform(object):
 
             `aug_mode_lst` => A list of possible aug to randomly choose from
     '''
-
     def __init__(self, depthmap_px=128, crop_len_mm=200, abs_rot_lim_deg=180,
                  fx = 241.42, fy = 241.42, ux = 160.0, uy = 120.0,
-                 scale_std=0.4, trans_std=5, aug_mode_lst = [AugType.AUG_NONE],
+                 scale_std=0.1, trans_std=5, aug_mode_lst = [AugType.AUG_NONE],
                  debug_mode=False):
 
         self.fx = fx #241.42
@@ -220,10 +202,9 @@ class DeepPriorXYTransform(object):
         self.depthmap_px = depthmap_px
         self.crop_len_mm = crop_len_mm ## aka crop_sz_mm; its one side of a cube
 
-        self.rot_lim = abs_rot_lim_deg  # we will sample from ~ U(-rot_lim,+rot_lim)
-        self.sc_std = scale_std
-        self.tr_std = trans_std
-        #self.pca_transformer = pca_transformer
+        self.rot_lim = abs_rot_lim_deg if abs_rot_lim_deg <=180 else 180
+        self.sc_std = scale_std if scale_std <= 0.1 else 0.1
+        self.tr_std = trans_std if trans_std <= 5 else 5
         self.aug_mode_lst = aug_mode_lst
 
         self.debug_mode = debug_mode    # plot if in debug mode
@@ -265,6 +246,7 @@ class DeepPriorXYTransform(object):
         ## get keypoints relative to CoM
         ## flatteny to get (21*3,) 1d array
         #keypt_mm_crop = keypt_mm_orig - com_mm_orig
+       
 
         ### augmentation ###
         # choose aug type -- at random from options in list
@@ -272,12 +254,20 @@ class DeepPriorXYTransform(object):
         # scale ~ abs( N(1, scale_std**2) )
         # trans ~ N(0, trans_std**2)
         aug_mode = self.aug_mode_lst[np.random.randint(0, len(self.aug_mode_lst))]
+
+        #!!! Remember 'is' compares if two 'labels' (var-name) point to SAME object
+        #!!! E.g. pointing to None or any immutable object like scalar '1'
+        #!!! '==' compares they have same INTERNAL VALUE
+        #For Enum comparision use '==' as you may have two DIFFERENT objects 'copies' of
+        #of class with SAME value / representation.
+        #Tbh safest option to us is == always or if you realy want == for None only
+
         aug_param = np.random.uniform(-self.rot_lim, self.rot_lim) \
-                    if aug_mode is AugType.AUG_ROT \
+                    if aug_mode == AugType.AUG_ROT \
                     else abs(1. + np.random.randn() * self.sc_std) \
-                    if aug_mode is AugType.AUG_SC \
+                    if aug_mode == AugType.AUG_SC \
                     else (np.random.randn(3) * self.tr_std) \
-                    if aug_mode is AugType.AUG_TRANS \
+                    if aug_mode == AugType.AUG_TRANS \
                     else np.nan
         
         # notice we supply {dpt_crop, keypt_px_orig}, we need dpt_crop_aug
@@ -287,12 +277,15 @@ class DeepPriorXYTransform(object):
         # keypt_mm_crop_aug can only be found using keypt_px_orig_aug which
         # is what we get using transf func
         (dpt_crop_aug, keypt_px_orig_aug, com_px_orig_aug, aug_transf_matx) = \
-            (dpt_crop, keypt_px_orig, com_px_orig, np.eye(3, dtype=np.float32)) \
-            if aug_mode is AugType.AUG_NONE \
-            else rotateHand2D(dpt_crop, keypt_px_orig, com_px_orig, aug_param) \
-            if aug_mode is AugType.AUG_ROT \
+            rotateHand2D(dpt_crop, keypt_px_orig, com_px_orig, aug_param) \
+            if aug_mode == AugType.AUG_ROT \
             else translateHand2D(dpt_crop, keypt_px_orig, com_px_orig, com_mm_orig, aug_param, 
-                                    self.fx, self.fy, crop_transf_matx, self.mm2px, crop_vol_mm) #\
+                                    self.fx, self.fy, crop_transf_matx, self.mm2px, crop_vol_mm) \
+            if aug_mode == AugType.AUG_TRANS \
+            else scaleHand2D(dpt_crop, keypt_px_orig, com_px_orig, com_mm_orig, aug_param, 
+                                    self.fx, self.fy, crop_transf_matx, self.mm2px, crop3D_mm=crop_vol_mm) \
+            if aug_mode == AugType.AUG_SC \
+            else (dpt_crop, keypt_px_orig, com_px_orig, np.eye(3, dtype=np.float32))
 
         keypt_mm_crop_aug = self.px2mmMulti(keypt_px_orig_aug) - self.px2mm(com_px_orig_aug)
         
@@ -302,7 +295,6 @@ class DeepPriorXYTransform(object):
                 crop_transf_matx=crop_transf_matx, aug_transf_matx=aug_transf_matx,
                 aug_mode=aug_mode, aug_val=aug_param, dpt_crop_aug=dpt_crop_aug) \
                 if self.debug_mode else None
-
 
         ### Standardisation ###
         ## This must be the last step always!

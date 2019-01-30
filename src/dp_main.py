@@ -1,8 +1,8 @@
-if __name__ == "__main__" and __package__ is None:
+if __name__ == "__main__" and (__package__ is None or __package__ is ''):
     from sys import path
     from os.path import dirname as dir
 
-    path.append(dir(path[0]))   # allow importing from modules in parent dir
+    path.append(dir(path[0]))   # allow importing from modules in parent dir, TODO: bad code design
 
 import argparse
 import os
@@ -23,8 +23,9 @@ from datasets.msra_hand import MARAHandDataset
 from src.dp_model import DeepPriorPPModel
 from src.dp_util import DeepPriorXYTransform, DeepPriorXYTestTransform, \
                         DeepPriorYTransform, DeepPriorYInverseTransform, \
-                        DeepPriorBatchResultCollector, PCATransform, \
-                        AugType
+                        DeepPriorBatchResultCollector, PCATransform
+
+from src.dp_augment import AugType
 
 
 
@@ -102,7 +103,7 @@ def main():
     CROPSZ_MM = 200
     DEBUG_MODE = False
 
-    AUG_MODES = [AugType.AUG_NONE, AugType.AUG_ROT, AugType.AUG_TRANS]#[AugType.AUG_ROT] # [None]
+    AUG_MODES = [AugType.AUG_NONE, AugType.AUG_ROT, AugType.AUG_SC]#[AugType.AUG_ROT] # [None]
 
     ### if refined_com: TODO: save/load pca with different name!s
     if args.reduced_dataset: print("Warning: Using reduced dataset for training.")
@@ -215,8 +216,10 @@ def main():
     # print("ValSetSz: ", len(val_set))
 
     ### debugging
-    #xTmp, yTmp = train_set[0]
-    #quit()
+    # xTmp, yTmp = train_set[0]
+    # xTmp, yTmp = train_set[1]
+    # xTmp, yTmp = train_set[2]
+    # quit()
     #print("Y_TMP", yTmp.shape)
     #print(yTmp)
     #quit()

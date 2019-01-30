@@ -57,8 +57,9 @@ These features are present in original soruce code but not yet implemented here:
 ## Results
 
 ### Experimented
-~14mm error with CoM_refined labels + no augmentation
-~13.4938mm error with CoM_refined labels + rot+scale train aug
+14.6952mm error with CoM_refined labels + no augmentation
+13.4938mm error with CoM_refined labels + rot+trans train_aug
+13.1496mm error with CoM_refined labels + rot train_aug
 
 ### Target
 ~9mm with PCA augmentation + rot+scale+trans augmentation

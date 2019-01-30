@@ -1,7 +1,8 @@
+from enum import IntEnum
+
 import cv2
 import torch
 import numpy as np
-
 
 '''
     Variable naming scheme:
@@ -18,6 +19,11 @@ import numpy as np
     <transform>Hand2D => All functions returning transformed depth+keypt+com
     <transform>Depth2D => All functions returning transformed depth omly
     <transform>KeyPt2D => All functions returning transformed keypt only
+
+    All functions described here provide feature transformation in the form of linear transformation
+    for data augmentation as this helps improve generalisation (test time) error.
+
+    Implemented: Rotate, Scale, Transform
 '''
 
 def comToBounds(com, crop_size_3D, fx, fy):
@@ -298,7 +304,7 @@ def cropHand2D(dpt_orig, keypt_px_orig, com_px_orig, fx, fy,
 
 def rotateHand2D(dpt, keypt_px, com_px, rot,
                resize_method=cv2.INTER_NEAREST,
-               pad_value=0):
+               pad_value=0, dpt_aug_shape=(128,128)):
         """
         Rotate hand virtually in the image plane by a given angle
         Only does 2D plane rotation so all inputs must be w.r.t px coords
@@ -318,11 +324,8 @@ def rotateHand2D(dpt, keypt_px, com_px, rot,
         # note in deep-prior '-rot' is used for rotation matx s.t. if rot > 0 => cw rot
         # we use 'rot' like standard so now if rot > 0 => acw rot
         rot = np.mod(rot, 360)
-        M = cv2.getRotationMatrix2D((dpt.shape[1]//2, dpt.shape[0]//2), rot, 1)
+        M = cv2.getRotationMatrix2D((dpt_aug_shape[0]//2, dpt_aug_shape[1]//2), rot, 1)
         M = M.astype(np.float32) # make sure everything is float32
-
-        dpt_aug = affineTransformImg(M, dpt, resize_method=resize_method,
-                                     border_mode=cv2.BORDER_CONSTANT, pad_value=pad_value)
 
         # dpt_aug = cv2.warpAffine(dpt, M, (dpt.shape[1], dpt.shape[0]), flags=flags,
         #                          borderMode=cv2.BORDER_CONSTANT, borderValue=pad_value)
@@ -330,54 +333,101 @@ def rotateHand2D(dpt, keypt_px, com_px, rot,
         com_px_aug = affineTransform2D(M, com_px)
         keypt_px_aug = affineTransform2D(M, keypt_px)
 
+        dpt_aug = affineTransformImg(M, dpt, resize_method=resize_method,
+                                     border_mode=cv2.BORDER_CONSTANT, pad_value=pad_value) \
+                                         if dpt is not None else None
+
         return dpt_aug, keypt_px_aug, com_px_aug, M
 
 
-def scaleHand2D(dpt, keypt_px, com_px, sf,
-               resize_method=cv2.INTER_NEAREST,
-               pad_value=0):
-        pass
+def scaleHand2D(dpt, keypt_px, com_px, com_mm_orig,
+                sf, fx, fy,
+                crop_transf_matx, mm2pxFn, crop3D_mm, dpt_aug_shape=(128,128),
+                resize_method=cv2.INTER_NEAREST, pad_value=0):
+        '''
+            Re-crop hand region using a bigger or smaller bounding box given in mm
+            Get a transformation matrix M describing this operation only and then perform
+            affine transforms to com/keypt and perspective transfomrs to dpt
+
+            `dpt_aug_shape` => Shape of the desired output
+        '''
+        if np.allclose(sf, 1.):
+            return dpt, keypt_px, com_px, np.eye(3, dtype=np.float32)
+        
+        scaled_crop3D_mm = tuple(sf*mm for mm in crop3D_mm)
+
+        if not (np.allclose(mm2pxFn(com_mm_orig)[2], 0.) or np.allclose(com_px[2], 0.)):
+            xstart, xend, ystart, yend, zstart, zend = \
+                        comToBounds(com_px, scaled_crop3D_mm, fx, fy)
+            
+            # ### includes both crop tranf AND aug translation transf
+            crop_aug_transf_matx = get2DTransformMatx(xstart, xend, ystart, yend, dpt_aug_shape)
+
+            # we must undo the 'effect' of translating due to cropping
+            M = np.matmul(crop_aug_transf_matx, np.linalg.inv(crop_transf_matx))
+            
+            com_px_aug = affineTransform2D(M, com_px)
+            keypt_px_aug = affineTransform2D(M, keypt_px)
+
+            dpt_aug = perspectiveTransformImg(dpt, M, dpt_aug_shape, crop3D_mm, zstart, zend, 
+                                    background_value=pad_value, nv_val=32000., 
+                                    thresh_z=True, com=com_mm_orig) \
+                                        if dpt is not None else None
+        else:
+            raise RuntimeError("com_z_val must not be near 0!")
+        
+        ## No need to send com_mm_orig_aug as this is auto calc from px2mm(com_px_orig_aug) step when we return
+        return dpt_aug, keypt_px_aug, com_px_aug, M
     
 
 def translateHand2D(dpt, keypt_px, com_px, com_mm_orig, off, fx, fy,
-                crop_transf_matx, mm2pxFn, crop3D_mm,
-               resize_method=cv2.INTER_NEAREST, pad_value=0, dpt_crop_shape=(128,128)):
+                crop_transf_matx, mm2pxFn, crop3D_mm, dpt_aug_shape=(128,128),
+               resize_method=cv2.INTER_NEAREST, pad_value=0):
+        '''
+            Shift CoM by off-set
+            Re-crop hand region using shifted CoM
+            Get a transformation matrix M describing this operation only and then perform
+            affine transforms to com/keypt and perspective transfomrs to dpt
+        '''
         if np.allclose(off, 0.):
-            return dpt_orig, keypt_px, com_px, np.eye(3, dtype=np.float32)
+            return dpt, keypt_px, com_px, np.eye(3, dtype=np.float32)
 
         com_mm_orig_aug = com_mm_orig + off
         com_px_aug = mm2pxFn(com_mm_orig_aug)
 
         if not (np.allclose(mm2pxFn(com_mm_orig)[2], 0.) or np.allclose(com_px_aug[2], 0.)):
-            ### main idea,,, we need to simply recrop the original image 
-            ### but this time with new com value
-            ### also in the end transform using appropriate transform the keypt_mm
-            ### you can do this using M matrix after crop
-            ### notice your com WILL ALWAYS BE at center
-            ### so if simply you choose a different com, your hand will pivot about
-            ### that value and thus you will have a 'translated image'
-            ### the only problem is now that our augmentation matrix is a combination
-            ### of tw transforms
-
+            # get new croppable region
             xstart, xend, ystart, yend, zstart, zend = comToBounds(com_px_aug, crop3D_mm, fx, fy)
 
             ### includes both crop tranf AND aug translation transf
-            crop_aug_transf_matx = get2DTransformMatx(xstart, xend, ystart, yend, dpt_crop_shape)
+            crop_aug_transf_matx = get2DTransformMatx(xstart, xend, ystart, yend, dpt_aug_shape)
 
             # we must undo the 'effect' of translating due to cropping
             # as we only need translation due to augmentation
             # this tried to do that
-            M = np.matmul(np.linalg.inv(crop_transf_matx), crop_aug_transf_matx)
-
-            dpt_aug = perspectiveTransformImg(dpt, M, dpt_crop_shape, crop3D_mm, zstart, zend, 
-                                    background_value=pad_value, nv_val=32000., 
-                                    thresh_z=True, com=com_mm_orig_aug)
+            #M = np.matmul(np.linalg.inv(crop_transf_matx), crop_aug_transf_matx)
+            M = np.matmul(crop_aug_transf_matx, np.linalg.inv(crop_transf_matx)) # new dunno if better?
             
             com_px_aug = affineTransform2D(M, com_px)
             keypt_px_aug = affineTransform2D(M, keypt_px)
+
+            dpt_aug = perspectiveTransformImg(dpt, M, dpt_aug_shape, crop3D_mm, zstart, zend, 
+                                    background_value=pad_value, nv_val=32000., 
+                                    thresh_z=True, com=com_mm_orig_aug) \
+                                        if dpt is not None else None
         else:
             raise RuntimeError("com_z_val must not be near 0!")
         
         ## No need to send com_mm_orig_aug as this is auto calc from px2mm(com_px_orig_aug) step when we return
         return dpt_aug, keypt_px_aug, com_px_aug, M
 
+
+class AugType(IntEnum):
+    '''
+        For any given sample, only one of 3 possible augs are applied
+        or even no augs applied.
+    '''
+    AUG_NONE = 0
+    AUG_ROT = 1
+    AUG_SC = 2
+    AUG_TRANS = 3
