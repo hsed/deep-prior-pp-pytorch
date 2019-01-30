@@ -77,17 +77,17 @@ def main():
                 else torch.device('cpu')
     dtype = torch.float
 
+    resume_train = args.resume >= 0
+    resume_after_epoch = args.resume
+    save_checkpoint = True
+    checkpoint_dir = r'checkpoint'
+
     # FROZEN_STATE
     # True => Don't do training just load model from checkpoint and test out
     # False resume, don't resume etc.
     FROZEN_STATE = (args.checkpoint is not None)
 
-    resume_train = args.resume >= 0
-    resume_after_epoch = args.resume
-
-    save_checkpoint = True
     EPOCHS_PER_CHECKPOINT = 5 # 5
-    checkpoint_dir = r'checkpoint'
 
     START_EPOCH = 0
     NUM_EPOCHS = args.epochs#3#1#2#1
@@ -103,11 +103,11 @@ def main():
     CROPSZ_MM = 200
     DEBUG_MODE = False
 
-    AUG_MODES = [AugType.AUG_NONE, AugType.AUG_ROT, AugType.AUG_SC]#[AugType.AUG_ROT] # [None]
+    AUG_MODES = [AugType.AUG_NONE, AugType.AUG_ROT, AugType.AUG_SC, AugType.AUG_TRANS]
 
     ### if refined_com: TODO: save/load pca with different name!s
-    if args.reduced_dataset: print("Warning: Using reduced dataset for training.")
-    if args.refined_com: print("Warning: Using refined CoM references for training.")
+    if args.reduced_dataset: print("Info: Using reduced dataset for training.")
+    if not args.refined_com: print("Info: Using GT CoM references for training.")
 
     ### common kwargs for MSRADataset
     MSRA_KWARGS = {
