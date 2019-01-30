@@ -39,16 +39,16 @@ Features present in this code:
 - [x] validation -- (**based on test_set_id only**)
 - [x] testing -- based on test_set_id
 - [x] avg 3D error calculation on test_set (using abs dist btw target & output keypoints)
-- [ ] Data Augmentation for training 
+- [x] Data Augmentation for training 
   - [x] Using Rotation
   - [x] Using Translation
-  - [ ] Using Scaling
-
+  - [x] Using Scaling
+- [ ] Data augmentation for PCA
 
 ### Not Implemented
 These features are present in original soruce code but not yet implemented here:
 
-- Data augmentation for PCA
+- 
 - CoM detection aka Hand Detector + RefineNet as pipeline
 - ScaleNet (aka multi-scale training)
 - % Error frames vs max 3D error
@@ -57,12 +57,17 @@ These features are present in original soruce code but not yet implemented here:
 ## Results
 
 ### Experimented
-14.6952mm error with CoM_refined labels + no augmentation
-13.4938mm error with CoM_refined labels + rot+trans train_aug
-13.1496mm error with CoM_refined labels + rot train_aug
+|CoM| PCA Aug | Train Aug | Error |
+|---|---------|-----------|-------|
+|RefineNet|None|None|14.6952mm|
+|RefineNet|None|Rot+None|13.1496mm|
+|RefineNet|None|Scale+None|13.4824mm|
+|RefineNet|None|Rot+Trans+None|13.4938mm|
+|RefineNet|None|Rot+Scale+None|13.9754mm|
+
 
 ### Target
-~9mm with PCA augmentation + rot+scale+trans augmentation
+~9mm with PCA augmentation + rot+scale+trans augmentation for MSRA dataset
 
 ## Dataset
 See `datasets/README.md` for details on the required datasets.

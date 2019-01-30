@@ -127,29 +127,19 @@ def plotImg(dpt_orig, dpt_crop, keypt_px_orig, com_px_orig,
     plt.show()
 
 
-class DeepPriorYTransform(object):
-    '''
-        Quick transformer for y-vals only (keypoint)
-        Centers (w.r.t CoM in dB) and standardises (-1,1) y
-        y-val -> center
-    '''
-    def __init__(self, crop_dpt_mm=200):
-        self.crop_dpt_mm = crop_dpt_mm
-    
-    def __call__(self, sample):
-        return \
-            standardiseKeyPoints(sample['joints'] - sample['refpoint'], self.crop_dpt_mm).flatten()
 
-class DeepPriorYInverseTransform(object):
+class DeepPriorYTestInverseTransform(object):
     '''
         Quick transformer for y-vals only (keypoint)
         Centers (w.r.t CoM in dB) and standardises (-1,1) y
         
         ## now this is an inverse of above
+        Note: This doesn't invert any augmentations so only use for test data
+        and obviously do not augment test data!
 
     '''
-    def __init__(self, crop_dpt_mm=200):
-        self.crop_dpt_mm = crop_dpt_mm
+    def __init__(self, crop_len_mm=200):
+        self.crop_len_mm = crop_len_mm
     
     def __call__(self, sample):
         pred_std_cen_batch, com_batch = sample
@@ -171,9 +161,7 @@ class DeepPriorYInverseTransform(object):
             com_batch = com_batch[:, None, :]
 
         return \
-            (unStandardiseKeyPoints(pred_std_cen_batch, self.crop_dpt_mm) + com_batch)
-
-
+            (unStandardiseKeyPoints(pred_std_cen_batch, self.crop_len_mm) + com_batch)
 
 
 
@@ -188,22 +176,29 @@ class DeepPriorXYTransform(object):
             0 <= `abs_rot_lim_deg` <= 180
 
             `aug_mode_lst` => A list of possible aug to randomly choose from
+            `depthmap_px` => Ouput px size of one-sde (we ouput 1:1 crop)
+
+            sc ~ N(1, 0.02**2); tr ~ N(0, 5); rot ~ U[-180, 180]
+            from Deep-Prior++ paper
     '''
-    def __init__(self, depthmap_px=128, crop_len_mm=200, abs_rot_lim_deg=180,
+    def __init__(self, depthmap_px=128, crop_len_mm=200, 
                  fx = 241.42, fy = 241.42, ux = 160.0, uy = 120.0,
-                 scale_std=0.1, trans_std=5, aug_mode_lst = [AugType.AUG_NONE],
-                 debug_mode=False):
+                 scale_std=0.02, trans_std=5, abs_rot_lim_deg=180,
+                 aug_mode_lst = [AugType.AUG_NONE], debug_mode=False):
 
         self.fx = fx #241.42
         self.fy = fy #241.42
         self.ux = ux #160.0
         self.uy = uy #120.0
-
-        self.depthmap_px = depthmap_px
-        self.crop_len_mm = crop_len_mm ## aka crop_sz_mm; its one side of a cube
+        
+        # output sz in px
+        self.out_sz_px = (depthmap_px, depthmap_px)
+        
+        # 3D cube crop sz around com in mm
+        self.crop_vol_mm = (crop_len_mm, crop_len_mm, crop_len_mm)
 
         self.rot_lim = abs_rot_lim_deg if abs_rot_lim_deg <=180 else 180
-        self.sc_std = scale_std if scale_std <= 0.1 else 0.1
+        self.sc_std = scale_std if scale_std <= 0.02 else 0.02
         self.tr_std = trans_std if trans_std <= 5 else 5
         self.aug_mode_lst = aug_mode_lst
 
@@ -221,11 +216,6 @@ class DeepPriorXYTransform(object):
         keypt_mm_orig = sample['joints']
         com_mm_orig = sample['refpoint']
 
-        ## crop3d bounding box size
-        ## IMP!!! THIS IS IN MM NOT IN NUM PIXELS!!
-        crop_vol_mm = (self.crop_len_mm, self.crop_len_mm, self.crop_len_mm)
-        out_sz_px = (self.depthmap_px, self.depthmap_px) # in pixels!
-
         ## convert joints & CoM to img coords
         ## note this is right for original image but wrong for cropped pic
         keypt_px_orig = self.mm2pxMulti(keypt_mm_orig)
@@ -239,36 +229,12 @@ class DeepPriorXYTransform(object):
         dpt_crop, crop_transf_matx = cropDepth2D(
                                                 dpt_orig, com_px_orig,
                                                 fx=self.fx, fy=self.fy,
-                                                crop3D_mm=crop_vol_mm,
-                                                out2D_px=out_sz_px
+                                                crop3D_mm=self.crop_vol_mm,
+                                                out2D_px=self.out_sz_px
                                                 )
-        #print("Transform matrix:\n", crop_transf_matx)
-        ## get keypoints relative to CoM
-        ## flatteny to get (21*3,) 1d array
-        #keypt_mm_crop = keypt_mm_orig - com_mm_orig
        
-
-        ### augmentation ###
-        # choose aug type -- at random from options in list
-        # rot ~ U(-rot_lim, +rot_lim)
-        # scale ~ abs( N(1, scale_std**2) )
-        # trans ~ N(0, trans_std**2)
-        aug_mode = self.aug_mode_lst[np.random.randint(0, len(self.aug_mode_lst))]
-
-        #!!! Remember 'is' compares if two 'labels' (var-name) point to SAME object
-        #!!! E.g. pointing to None or any immutable object like scalar '1'
-        #!!! '==' compares they have same INTERNAL VALUE
-        #For Enum comparision use '==' as you may have two DIFFERENT objects 'copies' of
-        #of class with SAME value / representation.
-        #Tbh safest option to us is == always or if you realy want == for None only
-
-        aug_param = np.random.uniform(-self.rot_lim, self.rot_lim) \
-                    if aug_mode == AugType.AUG_ROT \
-                    else abs(1. + np.random.randn() * self.sc_std) \
-                    if aug_mode == AugType.AUG_SC \
-                    else (np.random.randn(3) * self.tr_std) \
-                    if aug_mode == AugType.AUG_TRANS \
-                    else np.nan
+        aug_mode, aug_param = getAugModeParam(self.aug_mode_lst, self.rot_lim, 
+                                                self.sc_std, self.tr_std)
         
         # notice we supply {dpt_crop, keypt_px_orig}, we need dpt_crop_aug
         # and keypt_mm_crop_aug
@@ -280,10 +246,11 @@ class DeepPriorXYTransform(object):
             rotateHand2D(dpt_crop, keypt_px_orig, com_px_orig, aug_param) \
             if aug_mode == AugType.AUG_ROT \
             else translateHand2D(dpt_crop, keypt_px_orig, com_px_orig, com_mm_orig, aug_param, 
-                                    self.fx, self.fy, crop_transf_matx, self.mm2px, crop_vol_mm) \
+                                    self.fx, self.fy, crop_transf_matx, self.mm2px, self.crop_vol_mm) \
             if aug_mode == AugType.AUG_TRANS \
             else scaleHand2D(dpt_crop, keypt_px_orig, com_px_orig, com_mm_orig, aug_param, 
-                                    self.fx, self.fy, crop_transf_matx, self.mm2px, crop3D_mm=crop_vol_mm) \
+                                    self.fx, self.fy, crop_transf_matx,
+                                    self.mm2px, crop3D_mm=self.crop_vol_mm) \
             if aug_mode == AugType.AUG_SC \
             else (dpt_crop, keypt_px_orig, com_px_orig, np.eye(3, dtype=np.float32))
 
@@ -294,13 +261,13 @@ class DeepPriorXYTransform(object):
         plotImg(dpt_orig, dpt_crop, keypt_px_orig, com_px_orig, 
                 crop_transf_matx=crop_transf_matx, aug_transf_matx=aug_transf_matx,
                 aug_mode=aug_mode, aug_val=aug_param, dpt_crop_aug=dpt_crop_aug) \
-                if self.debug_mode else None
+                    if self.debug_mode else None
 
         ### Standardisation ###
         ## This must be the last step always!
         dpt_final = \
-            standardiseImg(dpt_crop_aug, com_mm_orig[2], crop_vol_mm[2], copy_arr=True)[np.newaxis, ...]
-        keypt_final = standardiseKeyPoints(keypt_mm_crop_aug, crop_vol_mm[2], copy_arr=True).flatten()
+            standardiseImg(dpt_crop_aug, com_mm_orig[2], self.crop_vol_mm[2])[np.newaxis, ...]
+        keypt_final = standardiseKeyPoints(keypt_mm_crop_aug, self.crop_vol_mm[2]).flatten()
 
         
         # return final x, y pair -- HOWEVER FOR TRAINING YOU NEED PCA VERSION OF OUTPUTS!!
@@ -373,8 +340,21 @@ class DeepPriorXYTransform(object):
 
 
 
-
 class DeepPriorXYTestTransform(DeepPriorXYTransform):
+    '''
+        This transformer is designed for use during testing
+        You are returned a triplet with X, Y, CoM
+
+        Your model returns Y_bar_centered
+        You use original CoM to make this Y_bar
+
+        Note: Y_bar_centered -> Y_bar comes from object localisation
+        and in hand pose est. this task is not at all handled.
+
+        I.e. for us we assume somehow to get 'CoM' from hand_detector
+        which did localisation and stored all such values for later
+        use in a file.
+    '''
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs) # initialise the super class
 
@@ -384,8 +364,59 @@ class DeepPriorXYTestTransform(DeepPriorXYTransform):
         com_mm = sample['refpoint'] # neede to transform back output from model
 
         # basically for test we don't need to transform y_coords
+        # but we need to supply com_mm so that the ouput from the
+        # nn can be corresctly recovered to keypoints_gt_mm range
         # hence this derived class is used.
         return (final_depth_img, keypoints_gt_mm, com_mm)
+
+
+class DeepPriorYTransform(DeepPriorXYTransform):
+    '''
+        Quick transformer for y-vals only (keypoint)
+        Centers (w.r.t CoM in dB) and standardises (-1,1) y
+        y-val -> center
+
+        Overload of XY transform so we can also do y augmentation
+    '''
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs) # initialise the super class
+
+    def __call__(self, sample):
+        keypt_mm_orig = sample['joints']
+        com_mm_orig = sample['refpoint']
+
+        keypt_px_orig = self.mm2pxMulti(keypt_mm_orig)
+        com_px_orig = self.mm2px(com_mm_orig)
+
+        # wherever dpt is needed, supply none to by-pass dpt transform
+
+        _, crop_transf_matx = cropDepth2D(
+                                            None, com_px_orig,
+                                            fx=self.fx, fy=self.fy,
+                                            crop3D_mm=self.crop_vol_mm,
+                                            out2D_px=self.out_sz_px
+                                        )
+        
+        aug_mode, aug_param = getAugModeParam(self.aug_mode_lst, self.rot_lim, 
+                                                self.sc_std, self.tr_std)
+
+        (_, keypt_px_orig_aug, com_px_orig_aug, _) = \
+            rotateHand2D(None, keypt_px_orig, com_px_orig, aug_param) \
+            if aug_mode == AugType.AUG_ROT \
+            else translateHand2D(None, keypt_px_orig, com_px_orig, com_mm_orig, aug_param, 
+                                    self.fx, self.fy, crop_transf_matx, self.mm2px, self.crop_vol_mm) \
+            if aug_mode == AugType.AUG_TRANS \
+            else scaleHand2D(None, keypt_px_orig, com_px_orig, com_mm_orig, aug_param, 
+                                    self.fx, self.fy, crop_transf_matx,
+                                    self.mm2px, crop3D_mm=self.crop_vol_mm) \
+            if aug_mode == AugType.AUG_SC \
+            else (None, keypt_px_orig, com_px_orig, np.eye(3, dtype=np.float32))
+
+        keypt_mm_crop_aug = self.px2mmMulti(keypt_px_orig_aug) - self.px2mm(com_px_orig_aug)
+
+
+        return standardiseKeyPoints(keypt_mm_crop_aug, self.crop_vol_mm[2]).flatten()
+
 
 
 class PCATransform():

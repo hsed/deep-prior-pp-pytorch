@@ -26,6 +26,30 @@ import numpy as np
     Implemented: Rotate, Scale, Transform
 '''
 
+def getAugModeParam(aug_mode_lst, rot_lim, sc_std, tr_std):
+    ### augmentation ###
+    # choose aug type -- at random from options in list
+    # rot ~ U(-rot_lim, +rot_lim)
+    # scale ~ abs( N(1, scale_std**2) )
+    # trans ~ N(0, trans_std**2)
+    aug_mode = aug_mode_lst[np.random.randint(0, len(aug_mode_lst))]
+
+    #!!! Remember 'is' compares if two 'labels' (var-name) point to SAME object
+    #!!! E.g. pointing to None or any immutable object like scalar '1'
+    #!!! '==' compares they have same INTERNAL VALUE
+    #For Enum comparision use '==' as you may have two DIFFERENT objects 'copies' of
+    #of class with SAME value / representation.
+    #Tbh safest option to us is == always or if you realy want == for None only
+
+    aug_param = np.random.uniform(-rot_lim, rot_lim) \
+                if aug_mode == AugType.AUG_ROT \
+                else abs(1. + (np.random.randn() * sc_std)) \
+                if aug_mode == AugType.AUG_SC \
+                else (np.random.randn(3) * tr_std) \
+                if aug_mode == AugType.AUG_TRANS \
+                else np.nan
+    return (aug_mode, aug_param)
+
 def comToBounds(com, crop_size_3D, fx, fy):
     """
         Project com in px coord to 3D coord and then crop a 3D 'volume' region 
@@ -107,6 +131,8 @@ def cropDepth2D(depth_img, com_px, fx, fy, crop3D_mm=(200, 200, 200), out2D_px =
         :param crop_size_3D: (x,y,z) extent of the source crop volume in mm
         :param out_size_2D: (x,y) extent of the destination size in pixels
         :return: cropped hand image, transformation matrix for joints, CoM in image coordinates
+
+        If depth_image is None then only return transformation matrix, useful for y_transform
     """
 
     # calculate boundaries in pixels given com in pixel and crop volume in mm
@@ -122,8 +148,10 @@ def cropDepth2D(depth_img, com_px, fx, fy, crop3D_mm=(200, 200, 200), out2D_px =
     # all non-zero values > zend are set to 0 aka inf depth
     # so in 3D we can imagine at edge of cube furthest from us all values are 0 (inf dist away)
     # the edge closest to us is max value, nothing comes closer.
-    cropped = getCrop(depth_img, xstart, xend, ystart, yend, zstart, zend)
-    cropped_resized = resizeCrop(cropped, out2D_px)
+    cropped = getCrop(depth_img, xstart, xend, ystart, yend, zstart, zend) \
+                if depth_img is not None else None
+    cropped_resized = resizeCrop(cropped, out2D_px) \
+                        if depth_img is not None else None
     transform_matx = get2DTransformMatx(xstart, xend, ystart, yend, out2D_px)
 
     assert(out2D_px[0] == out2D_px[1])    # only 1:1 supported for now

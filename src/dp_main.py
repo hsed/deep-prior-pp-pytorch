@@ -22,7 +22,7 @@ from lib.progressbar import progress_bar, format_time
 from datasets.msra_hand import MARAHandDataset
 from src.dp_model import DeepPriorPPModel
 from src.dp_util import DeepPriorXYTransform, DeepPriorXYTestTransform, \
-                        DeepPriorYTransform, DeepPriorYInverseTransform, \
+                        DeepPriorYTransform, DeepPriorYTestInverseTransform, \
                         DeepPriorBatchResultCollector, PCATransform
 
 from src.dp_augment import AugType
@@ -126,17 +126,22 @@ def main():
 
     transform_train = DeepPriorXYTransform(depthmap_px=IMGSZ_PX, crop_len_mm=CROPSZ_MM,
                                            aug_mode_lst=AUG_MODES, debug_mode=DEBUG_MODE)
-    # its equivalent as train transformer escept for augmentation
+    
+    # its equivalent as train transformer except for augmentation
     transform_val = DeepPriorXYTransform(depthmap_px=IMGSZ_PX, crop_len_mm=CROPSZ_MM,
                                            aug_mode_lst=[AugType.AUG_NONE])
+    
+    #Must Ensure NO Augmentation for test as inverter can't handle that.
     transform_test = DeepPriorXYTestTransform(depthmap_px=IMGSZ_PX, crop_len_mm=CROPSZ_MM,
                                               aug_mode_lst=[AugType.AUG_NONE])
 
     # used for pca_calc
-    transform_y = DeepPriorYTransform(crop_dpt_mm=CROPSZ_MM)
+    # New: Now we can augment data even for PCA_calc
+    transform_y = DeepPriorYTransform(depthmap_px=IMGSZ_PX, crop_len_mm=CROPSZ_MM,
+                                      aug_mode_lst=AUG_MODES)
 
     ## used at test time
-    transform_output = DeepPriorYInverseTransform(crop_dpt_mm=CROPSZ_MM)
+    transform_output = DeepPriorYTestInverseTransform(crop_len_mm=CROPSZ_MM)
 
     #######################################################################################
     ## PCA
@@ -350,7 +355,7 @@ def main():
     print("FINAL_AVG_3D_ERROR: %0.4fmm" % test_res_collector.calc_avg_3D_error())
 
     print("With Config:", "{GT_CoM: %s, Aug: %s, Full_Dataset: %s}" % \
-                (not args.refined_com, False, not args.reduced_dataset ))
+                (not args.refined_com, AUG_MODES, not args.reduced_dataset ))
     
 
     print('All done ..')
