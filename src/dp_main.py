@@ -99,7 +99,7 @@ def main():
     CROPSZ_MM = 200
     DEBUG_MODE = False
 
-    AUG_MODES = [AugType.AUG_ROT] #AugType.AUG_NONE, AugType.AUG_SC, AugType.AUG_TRANS
+    AUG_MODES = [AugType.AUG_ROT, AugType.AUG_NONE]#, AugType.AUG_SC, AugType.AUG_TRANS
 
     ### if refined_com: TODO: save/load pca with different name!s
     if args.reduced_dataset: print("Info: Using reduced dataset for training.")
@@ -367,7 +367,7 @@ def main():
         plot_fname = 'eval/MSRA15/msra_test_%d_joint_acc.png' % TEST_SUBJ_ID
 
         saveKeypoints(pred_fname, 
-            test_res_collector.get_ahpe_result('eval/msra_test_list.txt', TEST_SUBJ_ID, DATA_DIR))
+            test_res_collector.get_ahpe_result('eval/MSRA15/msra_test_list.txt', TEST_SUBJ_ID, DATA_DIR))
         print("Keypoints saved to %s..." % pred_fname)
 
         names = ['joint_'+str(i+1) for i in range(NUM_KEYPOINTS)]
@@ -381,7 +381,7 @@ def main():
     
     
     
-    print('All done ..')
+    print('\nAll done ..')
 
 
 if __name__ == '__main__':
