@@ -1,7 +1,7 @@
 # Evaluation
 ## Steps
 
-- For evaluation, train network for each subject id as test case and then in the end choose `--save_eval` to save results (in `eval/MSRA15/` by default) which are particularly compatible with [ahpe](https://github.com/xinghaochen/awesome-hand-pose-estimation/tree/master/evaluation).
+- For evaluation, train network for each subject id as test case and then in the end choose `--save_eval` to save results (in `eval/MSRA15/` by default) which are particularly compatible with [ahpe](https://github.com/xinghaochen/awesome-hand-pose-estimation/tree/master/evaluation). The file `msra_test_list.txt` is from Awesome-Hand-Pose-Estim. github repo.
 
 - This will save files as:
   ```

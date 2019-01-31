@@ -55,16 +55,25 @@ These features are present in original soruce code but not yet implemented here:
 - NYU, ICVL datasets
 
 ## Results
+- 30 Epochs unless otherwise specified
+- PCA ~70k unless otherwise specified
+- Everything else as orig paper
 
 ### Experimented
-|CoM| PCA Aug | Train Aug | Error |
-|---|---------|-----------|-------|
-|RefineNet|None|None|14.6952mm|
-|RefineNet|None|Rot+None|13.1496mm|
-|RefineNet|None|Scale+None|13.4824mm|
-|RefineNet|None|Rot+Trans+None|13.4938mm|
-|RefineNet|None|Rot+Scale+None|13.9754mm|
-
+|CoM| PCA Aug | Train Aug | Error |Notes
+|---|---------|-----------|-------|---|
+|RefineNet|None|None|14.6952mm||
+|RefineNet|None|Rot+None|13.1496mm||
+|RefineNet|None|Scale+None|13.4824mm||
+|RefineNet|None|Rot+Trans+None|13.4938mm||
+|RefineNet|None|Rot+Scale+None|13.9754mm||
+|RefineNet|Rot+Scale+Trans+None|Rot+Scale+Trans+None|13.2108mm||
+|RefineNet|Rot+Scale+Trans+None|Rot+Scale+Trans+None|12.64mm|50 epoch training|
+|RefineNet|Rot+Scale+Trans+None|Rot+Scale+Trans+None|13.4766mm|pca-200k_ep-30|
+|RefineNet|Rot+Scale+Trans+None|Rot+Scale+Trans+None|11.9229mm|pca-200k_ep-100|
+|RefineNet|Rot+Scale+Trans+None|Rot+None|13.3798mm|pca-200k_ep-30|
+|RefineNet|Rot+Scale+Trans+None|Rot|17.1169mm|pca-200k_ep-30|
+|RefineNet|Rot+Scale+Trans+None|Rot+None|????mm|pca-200k_ep-100_TODO|
 
 ### Target
 ~9mm with PCA augmentation + rot+scale+trans augmentation for MSRA dataset
@@ -76,3 +85,9 @@ See `datasets/README.md` for details on the required datasets.
 See `doc/notes.md` for more details (currently in rough / needs cleanup)
 
 [Progress Doc](https://imperiallondon-my.sharepoint.com)
+
+
+## Eval
+See `eval/README.md` for more details.
+
+

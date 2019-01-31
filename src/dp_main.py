@@ -49,6 +49,8 @@ def parse_args():
         help='use com from refineNet stored in txt files')
     parser.add_argument('--force-pca', '-fp', action='store_true',
         help='Force new PCA calc and overwrite cache (if exists)')
+    parser.add_argument('--save-eval', '-se', action='store_true',
+        help='Save evaluation results that are consistent with Awesome Hand Pose Estimation')
     args = parser.parse_args()
     return args
 
@@ -352,26 +354,31 @@ def main():
     # test_epoch(net, fit_loader, fit_res_collector, device, dtype)
     # keypoints_fit = fit_res_collector.get_result()
     # save_keypoints('./fit_res.txt', keypoints_fit)
-    print("FINAL_AVG_3D_ERROR: %0.4fmm" % test_res_collector.calc_avg_3D_error())
+    print("\nFINAL_AVG_3D_ERROR: %0.4fmm" % test_res_collector.calc_avg_3D_error())
 
     print("With Config:", "{GT_CoM: %s, Aug: %s, Full_Dataset: %s}" % \
                 (not args.refined_com, [aug.name for aug in AUG_MODES], not args.reduced_dataset ))
     
 
-    ### new save
-    saveKeypoints(
-        'datasets/eval_test_%d_ahpe.txt' % TEST_SUBJ_ID, 
-        test_res_collector.get_ahpe_result('datasets/msra_test_list.txt', TEST_SUBJ_ID, DATA_DIR))
+    if args.save_eval:
+        ### new saving results and plots ###
+        print('\n==> Saving ..')
+        pred_fname = 'eval/MSRA15/eval_test_%d_ahpe.txt' % TEST_SUBJ_ID
+        plot_fname = 'eval/MSRA15/msra_test_%d_joint_acc.png' % TEST_SUBJ_ID
 
-    print("Keypoints saved...")
+        saveKeypoints(pred_fname, 
+            test_res_collector.get_ahpe_result('eval/msra_test_list.txt', TEST_SUBJ_ID, DATA_DIR))
+        print("Keypoints saved to %s..." % pred_fname)
 
-    names = ['joint_'+str(i+1) for i in range(NUM_KEYPOINTS)]
-    dist, acc = test_res_collector.compute_dist_acc_wrapper(max_dist=100, num=100)
-    fig, ax = plt.subplots()
-    plot_acc(ax, dist, acc, names)
-    fig.savefig('eval/msra_test_%d_joint_acc.png')
-    #plt.show()
-    print("Plot saved...")
+        names = ['joint_'+str(i+1) for i in range(NUM_KEYPOINTS)]
+        dist, acc = test_res_collector.compute_dist_acc_wrapper(max_dist=100, num=100)
+        fig, ax = plt.subplots()
+        plot_acc(ax, dist, acc, names)
+        ax.grid(which='both')
+        fig.savefig(plot_fname)
+        #plt.show()
+        print("Plot saved to %s..." % plot_fname)
+    
     
     
     print('All done ..')
