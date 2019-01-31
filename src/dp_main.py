@@ -152,13 +152,17 @@ def main():
         # load all y_sample sin tprch array
         # note only train subjects are loaded!
         y_set = MARAHandDataset(DATA_DIR, CENTER_DIR, 'train', TEST_SUBJ_ID, transform_y, **MSRA_KWARGS)
-        y_loader = torch.utils.data.DataLoader(y_set, batch_size=1, shuffle=True, num_workers=0)
-        print('==> Collating y_samples for PCA ..')
+        
+        y_pca_len = int(2e5)
+        y_idx_pca = np.random.choice(len(y_set), y_pca_len, replace=True)
+        #print(y_idx_pca, y_idx_pca.shape)
+        #y_loader = torch.utils.data.DataLoader(y_set, batch_size=1, shuffle=True, num_workers=0)
+        print('==> Collating %d y_samples for PCA ..' % y_pca_len)
         
         fullYList = []
-        for (i, item) in enumerate(y_loader):
-            fullYList.append(item)
-            progress_bar(i*y_loader.batch_size, len(y_loader))
+        for (i, item) in enumerate(y_idx_pca):  #y_loader
+            fullYList.append(y_set[item])
+            progress_bar(i, y_pca_len) #y_loader
         
         y_train_samples = torch.cat(fullYList) #tuple(y_loader)
         #print(fullList)
@@ -173,7 +177,7 @@ def main():
 
         del y_train_samples
         del fullYList
-        del y_loader
+        #del y_loader
         del y_set
 
     # print("PCA Matrix, Vector: \t", 
