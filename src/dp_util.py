@@ -126,6 +126,32 @@ def plotImg(dpt_orig, dpt_crop, keypt_px_orig, com_px_orig,
     plt.tight_layout()
     plt.show()
 
+def saveKeypoints(filename, keypoints):
+    # Reshape one sample keypoints into one line
+    keypoints = keypoints.reshape(keypoints.shape[0], -1)
+    np.savetxt(filename, keypoints, fmt='%0.4f')
+
+# from v2v_posenet
+def computeDistAcc(pred, gt, dist):
+        '''
+        pred: (N, K, 3)
+        gt: (N, K, 3)
+        dist: (M, )
+        return acc: (K, M)
+        '''
+        assert(pred.shape == gt.shape)
+        assert(len(pred.shape) == 3)
+
+        N, K = pred.shape[0], pred.shape[1]
+        err_dist = np.sqrt(np.sum((pred - gt)**2, axis=2))  # (N, K)
+
+        acc = np.zeros((K, dist.shape[0]))
+
+        for i, d in enumerate(dist):
+            acc_d = (err_dist < d).sum(axis=0) / N
+            acc[:,i] = acc_d
+
+        return acc
 
 
 class DeepPriorYTestInverseTransform(object):
@@ -635,6 +661,53 @@ class DeepPriorBatchResultCollector():
     def get_result(self):
         ## this will just return predicted keypoints
         return self.keypoints
+    
+    def get_ahpe_result(self, ahpe_fname, test_model_id, dataset_dir):
+        '''
+            `ahpe_fname` => msra_test_list.txt
+            test_model_id => current unseen test model.
+
+            Pseudo Code:
+            1) load val_sample_name list from ahpe_fname
+            2) load test_sample_name from self.dataloader.dataset.names
+                Note this is test data loader and we need to access
+                Underlying test data-set
+            3) Filter val_sample_name to only those starting as
+                'P%s*' % test_model_id to get only valid names for that
+                test model
+            4) Now find all indices of test_sample_name that are also in
+                val_sample_name
+                Now use these indices to select from self.keypoints only
+                valid keypoints and save results as
+                eval_id_valid.txt
+            5) later on u can merge all these files make sure last merge
+                is same num as hpce
+        '''
+
+        assert (test_model_id >= 0 and test_model_id <= 8), "Error: Test_ID must be >=0 and <=8"
+        
+        prefix = 'P%d' % test_model_id
+        with open(ahpe_fname) as f:
+            val_name_arr = \
+                np.array([os.path.join(dataset_dir, line.rstrip('\n')) \
+                                    for line in f if line.startswith(prefix)])
+        dataset_name_arr = np.array(self.data_loader.dataset.names)
+        valid_mask_arr = np.isin(dataset_name_arr, val_name_arr, assume_unique=True)
+        #print("val_name_arr:\n", dataset_name_arr)
+        #print("\nDataset_Name_Arr:\n", dataset_name_arr)
+        
+        # note our keypt arr is (num_samples, num_joints, num_dim)
+        # we just need to filter out num_samples, nothing else!
+        val_keyp_arr = self.keypoints[ valid_mask_arr ]
+        print("Mask, Valid Names, Valid Keypoints: ",\
+                    valid_mask_arr.shape, val_name_arr.shape, val_keyp_arr.shape)
+
+        assert val_name_arr.shape[0] == val_keyp_arr.shape[0], \
+                        "Error: Something went wrong with np.in1d..."
+        assert self.keypoints.shape[1] == self.keypoints.shape[1]
+        assert self.keypoints.shape[2] == self.keypoints.shape[2]
+
+        return val_keyp_arr
 
     
     def calc_avg_3D_error(self, ret_avg_err_per_joint=False):
@@ -669,3 +742,19 @@ class DeepPriorBatchResultCollector():
         ## R^{21} to get avg error of each joint
         ## FINALLY if needed avg R^{21} -> R^{1}
         ## to get avg 3D error
+    
+    # from v2v_posenet
+    def compute_dist_acc_wrapper(self, max_dist=10, num=100):
+        '''
+        pred: (N, K, 3)
+        gt: (N, K, 3)
+        return dist: (K, )
+        return acc: (K, num)
+        '''
+        assert(self.keypoints.shape == self.keypoints_gt.shape)
+        assert(len(self.keypoints.shape) == 3)
+
+        dist = np.linspace(0, max_dist, num)
+        return dist, computeDistAcc(self.keypoints, self.keypoints_gt, dist)
+
+    # from v2v_posenet, internal func

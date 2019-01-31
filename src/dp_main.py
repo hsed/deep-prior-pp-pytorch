@@ -18,12 +18,13 @@ from torchvision import transforms
 from lib.solver import train_epoch, val_epoch, test_epoch, test_epoch_dropout
 from lib.sampler import ChunkSampler
 from lib.progressbar import progress_bar, format_time
+from lib.plot import *
 
 from datasets.msra_hand import MARAHandDataset
 from src.dp_model import DeepPriorPPModel
 from src.dp_util import DeepPriorXYTransform, DeepPriorXYTestTransform, \
                         DeepPriorYTransform, DeepPriorYTestInverseTransform, \
-                        DeepPriorBatchResultCollector, PCATransform
+                        DeepPriorBatchResultCollector, PCATransform, saveKeypoints
 
 from src.dp_augment import AugType
 
@@ -51,13 +52,6 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-
-
-
-def save_keypoints(filename, keypoints):
-    # Reshape one sample keypoints into one line
-    keypoints = keypoints.reshape(keypoints.shape[0], -1)
-    np.savetxt(filename, keypoints, fmt='%0.4f')
 
 
 
@@ -103,11 +97,13 @@ def main():
     CROPSZ_MM = 200
     DEBUG_MODE = False
 
-    AUG_MODES = [AugType.AUG_NONE, AugType.AUG_ROT, AugType.AUG_SC, AugType.AUG_TRANS]
+    AUG_MODES = [AugType.AUG_ROT] #AugType.AUG_NONE, AugType.AUG_SC, AugType.AUG_TRANS
 
     ### if refined_com: TODO: save/load pca with different name!s
     if args.reduced_dataset: print("Info: Using reduced dataset for training.")
     if not args.refined_com: print("Info: Using GT CoM references for training.")
+
+    print("Info: AUG_MODES: ", [aug.name for aug in AUG_MODES])
 
     ### common kwargs for MSRADataset
     MSRA_KWARGS = {
@@ -164,7 +160,7 @@ def main():
             fullYList.append(y_set[item])
             progress_bar(i, y_pca_len) #y_loader
         
-        y_train_samples = torch.cat(fullYList) #tuple(y_loader)
+        y_train_samples = torch.from_numpy(np.stack(fullYList)) #tuple(y_loader) #torch.cat()
         #print(fullList)
         print("\nY_GT_STD SHAPE: ", y_train_samples.shape, 
                 "Max: ", np.max(y_train_samples.numpy()), 
@@ -359,9 +355,25 @@ def main():
     print("FINAL_AVG_3D_ERROR: %0.4fmm" % test_res_collector.calc_avg_3D_error())
 
     print("With Config:", "{GT_CoM: %s, Aug: %s, Full_Dataset: %s}" % \
-                (not args.refined_com, AUG_MODES, not args.reduced_dataset ))
+                (not args.refined_com, [aug.name for aug in AUG_MODES], not args.reduced_dataset ))
     
 
+    ### new save
+    saveKeypoints(
+        'datasets/eval_test_%d_ahpe.txt' % TEST_SUBJ_ID, 
+        test_res_collector.get_ahpe_result('datasets/msra_test_list.txt', TEST_SUBJ_ID, DATA_DIR))
+
+    print("Keypoints saved...")
+
+    names = ['joint_'+str(i+1) for i in range(NUM_KEYPOINTS)]
+    dist, acc = test_res_collector.compute_dist_acc_wrapper(max_dist=100, num=100)
+    fig, ax = plt.subplots()
+    plot_acc(ax, dist, acc, names)
+    fig.savefig('eval/msra_test_%d_joint_acc.png')
+    #plt.show()
+    print("Plot saved...")
+    
+    
     print('All done ..')
 
 
