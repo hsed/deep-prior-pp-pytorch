@@ -699,7 +699,7 @@ class DeepPriorBatchResultCollector():
         # note our keypt arr is (num_samples, num_joints, num_dim)
         # we just need to filter out num_samples, nothing else!
         val_keyp_arr = self.keypoints[ valid_mask_arr ]
-        print("Mask, Valid Names, Valid Keypoints: ",\
+        print("Filter Results: (Mask, Valid Names, Valid Keypoints) -- ",\
                     valid_mask_arr.shape, val_name_arr.shape, val_keyp_arr.shape)
 
         assert val_name_arr.shape[0] == val_keyp_arr.shape[0], \
