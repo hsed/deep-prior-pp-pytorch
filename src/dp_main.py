@@ -120,6 +120,9 @@ def main():
     ## Transforms
     # use default crop sizes 200mm
     # use overwrite_cache = True when you want to force learn a new PCA matrix
+    # by default we've been using device cpu, actually for PCA cpu device is ok
+    # also we need a lot more mem for svd ~100GB or so! Thus, cpu is fine.
+    # also after testing 
     transform_pca = PCATransform(n_components=PCA_COMP, use_cache=True, overwrite_cache=args.force_pca)
 
     transform_train = DeepPriorXYTransform(depthmap_px=IMGSZ_PX, crop_len_mm=CROPSZ_MM,
