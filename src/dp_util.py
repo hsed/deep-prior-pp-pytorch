@@ -11,6 +11,8 @@ import matplotlib.cm as cmap
 
 from dp_augment import *
 
+from sklearn.decomposition import PCA
+
 
 def standardiseImg(depth_img, com_dpt_mm, crop_dpt_mm, extrema=(-1,1), copy_arr=False):
     # create a copy to prevent issues to original array
@@ -456,7 +458,7 @@ class PCATransform():
         PCA is calculated using SVD of co-var matrix using torch (can be GPU) but any subsequent calls
         transform numpy-type samples to new subspace using numpy arrays.
     '''
-    def __init__(self, device=torch.device('cpu'), dtype=torch.float,
+    def __init__(self, dtype=torch.float,
                  n_components=30, use_cache=False, overwrite_cache=False,
                  cache_dir='checkpoint'):
         
@@ -470,7 +472,7 @@ class PCATransform():
         ## filled on predict
         self.dist_matx_torch = None
 
-        self.device = device
+        self.device = torch.device('cpu')   # this is needed so keep as in
         self.dtype = dtype
         self.out_dim = n_components
 
@@ -548,27 +550,34 @@ class PCATransform():
         ## assume input is of torch type
         ## can put if condition here
         if X.dtype != self.dtype or X.device != self.device:
+            # make sure to switch to cpu
             X.to(device=self.device, dtype=self.dtype)
         
         if self.transform_matrix_np is not None:
             Warning("PCA transform matx already exists, refitting...")
 
         # mean normalisation
-        X_mean = torch.mean(X,0)
-        X = X - X_mean.expand_as(X)
+        #X_mean = torch.mean(X,0)
+        #X = X - X_mean.expand_as(X)
+
+        sklearn_pca = PCA(n_components=self.out_dim)
+        sklearn_pca.fit(X.cpu().detach().numpy())
+
 
         # svd, need to transpose x so each data is in one col now
-        U,S,_ = torch.svd(torch.t(X))
+        #U,S,_ = torch.svd(torch.t(X))
 
         #print("X.shape:", X.shape, "U.shape:", U.shape)
 
         ## store U.T as this is the correct matx for single samples i.e. vectors, for multiple i.e. matrix ensure to transpose back!
-        self.transform_matrix_torch = torch.t(U[:,:self.out_dim])
-        self.mean_vect_torch = X_mean
+        #self.transform_matrix_torch = torch.t(U[:,:self.out_dim])
+        #self.mean_vect_torch = X_mean
 
         # if in cpu just return view tensor as ndarray else copy array to cpu and return as ndarray
-        self.transform_matrix_np = self.transform_matrix_torch.cpu().clone().numpy()
-        self.mean_vect_np = self.mean_vect_torch.cpu().clone().numpy().flatten() # ensure 1D
+        self.transform_matrix_np = sklearn_pca.components_.copy()#self.transform_matrix_torch.cpu().clone().numpy()
+        self.mean_vect_np = sklearn_pca.mean_.copy() #mean_vect_torch.cpu().clone().numpy().flatten() # ensure 1D
+
+        del sklearn_pca # no longer needed
 
         shared_array_base = multiprocessing.Array(ctypes.c_float, self.transform_matrix_np.shape[0]*self.transform_matrix_np.shape[1])
         shared_array = np.ctypeslib.as_array(shared_array_base.get_obj())
@@ -579,8 +588,8 @@ class PCATransform():
         shared_array = shared_array.reshape(self.transform_matrix_np.shape[0], self.transform_matrix_np.shape[1])
         #print("SharedMemArr", shared_array.shape)
 
-        shared_array[:, :] = self.transform_matrix_torch.cpu().clone().numpy()
-        shared_array2[:] = self.mean_vect_torch.cpu().clone().numpy().flatten()
+        shared_array[:, :] = self.transform_matrix_np
+        shared_array2[:] = self.mean_vect_np
 
         del self.transform_matrix_np
         del self.mean_vect_np
@@ -599,7 +608,7 @@ class PCATransform():
         
         if return_X_no_mean:
             # returns the X matrix as mean removed! Also a torch tensor!
-            return X
+            return X - torch.from_numpy(self.mean_vect_np).expand_as(X)
         else:
             return None
     

@@ -100,12 +100,14 @@ def main():
     DEBUG_MODE = False
 
     AUG_MODES = [AugType.AUG_ROT, AugType.AUG_NONE]#, AugType.AUG_SC, AugType.AUG_TRANS
+    PCA_AUG_MODES = [AugType.AUG_ROT, AugType.AUG_SC, AugType.AUG_TRANS, AugType.AUG_NONE]#
 
     ### if refined_com: TODO: save/load pca with different name!s
     if args.reduced_dataset: print("Info: Using reduced dataset for training.")
     if not args.refined_com: print("Info: Using GT CoM references for training.")
 
     print("Info: AUG_MODES: ", [aug.name for aug in AUG_MODES])
+    print("Info: PCA_AUG_MODES: ", [aug.name for aug in PCA_AUG_MODES])
 
     ### common kwargs for MSRADataset
     MSRA_KWARGS = {
@@ -122,7 +124,6 @@ def main():
     # use overwrite_cache = True when you want to force learn a new PCA matrix
     # by default we've been using device cpu, actually for PCA cpu device is ok
     # also we need a lot more mem for svd ~100GB or so! Thus, cpu is fine.
-    # also after testing 
     transform_pca = PCATransform(n_components=PCA_COMP, use_cache=True, overwrite_cache=args.force_pca)
 
     transform_train = DeepPriorXYTransform(depthmap_px=IMGSZ_PX, crop_len_mm=CROPSZ_MM,
@@ -154,7 +155,7 @@ def main():
         # note only train subjects are loaded!
         y_set = MARAHandDataset(DATA_DIR, CENTER_DIR, 'train', TEST_SUBJ_ID, transform_y, **MSRA_KWARGS)
         
-        y_pca_len = int(2e5)
+        y_pca_len = 1000#int(2e5)
         y_idx_pca = np.random.choice(len(y_set), y_pca_len, replace=True)
         #print(y_idx_pca, y_idx_pca.shape)
         #y_loader = torch.utils.data.DataLoader(y_set, batch_size=1, shuffle=True, num_workers=0)
