@@ -156,7 +156,7 @@ def main():
         # note only train subjects are loaded!
         y_set = MARAHandDataset(DATA_DIR, CENTER_DIR, 'train', TEST_SUBJ_ID, transform_y, **MSRA_KWARGS)
         
-        y_pca_len = int(5e5)
+        y_pca_len = int(1e6)
         y_idx_pca = np.random.choice(len(y_set), y_pca_len, replace=True)
         #print(y_idx_pca, y_idx_pca.shape)
         #y_loader = torch.utils.data.DataLoader(y_set, batch_size=1, shuffle=True, num_workers=0)
