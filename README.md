@@ -43,7 +43,7 @@ Features present in this code:
   - [x] Using Rotation
   - [x] Using Translation
   - [x] Using Scaling
-- [ ] Data augmentation for PCA
+- [x] Data augmentation for PCA
 
 ### Not Implemented
 These features are present in original soruce code but not yet implemented here:
@@ -73,10 +73,14 @@ These features are present in original soruce code but not yet implemented here:
 |RefineNet|Rot+Scale+Trans+None|Rot+Scale+Trans+None|11.9229mm|pca-200k_ep-100|
 |RefineNet|Rot+Scale+Trans+None|Rot+None|13.3798mm|pca-200k_ep-30|
 |RefineNet|Rot+Scale+Trans+None|Rot|17.1169mm|pca-200k_ep-30|
-|RefineNet|Rot+Scale+Trans+None|Rot+None|????mm|pca-200k_ep-100_TODO|
+|RefineNet|Rot+Scale+Trans+None|Rot+None|~11.5mm|pca-200k_ep-100|
+|RefineNet|Rot+Scale+Trans+None|Rot+None|~12.6mm|pca-1M_ep-100|
+|RefineNet|Rot+Trans+None|Rot+Trans+None|??mm|pca-1M_ep-100|
+
+Note PCA sampling is not repeatable, thus some inconsistencies with results
 
 ### Target
-~9mm with PCA augmentation + rot+scale+trans augmentation for MSRA dataset
+~9mm with PCA augmentation (rot+trans+none; 1e6 samples) + rot+trans+none augmentation for MSRA dataset
 
 ## Dataset
 See `datasets/README.md` for details on the required datasets.

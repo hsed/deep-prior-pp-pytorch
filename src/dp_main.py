@@ -99,8 +99,8 @@ def main():
     CROPSZ_MM = 200
     DEBUG_MODE = False
 
-    AUG_MODES = [AugType.AUG_ROT, AugType.AUG_NONE]#, AugType.AUG_SC, AugType.AUG_TRANS
-    PCA_AUG_MODES = [AugType.AUG_ROT, AugType.AUG_SC, AugType.AUG_TRANS, AugType.AUG_NONE]#
+    AUG_MODES = [AugType.AUG_ROT, AugType.AUG_TRANS, AugType.AUG_NONE]#, AugType.AUG_SC, AugType.AUG_TRANS
+    PCA_AUG_MODES = [AugType.AUG_ROT, AugType.AUG_TRANS, AugType.AUG_NONE]#
 
     ### if refined_com: TODO: save/load pca with different name!s
     if args.reduced_dataset: print("Info: Using reduced dataset for training.")
