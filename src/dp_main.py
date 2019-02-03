@@ -95,7 +95,7 @@ def main():
     CENTER_DIR = r'datasets/MSRA15_CenterofMassPts'
 
     NUM_KEYPOINTS = 21
-    TEST_SUBJ_ID = 0 #3 ##changed for now
+    TEST_SUBJ_ID = args.test_subj_id #3 ##changed for now
     PCA_COMP = 30
     IMGSZ_PX = 128 
     CROPSZ_MM = 200
@@ -110,6 +110,7 @@ def main():
 
     print("Info: AUG_MODES: ", [aug.name for aug in AUG_MODES])
     print("Info: PCA_AUG_MODES: ", [aug.name for aug in PCA_AUG_MODES])
+    print("Info: TEST_SUBJ_ID: ", TEST_SUBJ_ID)
 
     ### common kwargs for MSRADataset
     MSRA_KWARGS = {
@@ -158,7 +159,7 @@ def main():
         # note only train subjects are loaded!
         y_set = MARAHandDataset(DATA_DIR, CENTER_DIR, 'train', TEST_SUBJ_ID, transform_y, **MSRA_KWARGS)
         
-        y_pca_len = int(1e6)
+        y_pca_len = int(2e5)
         y_idx_pca = np.random.choice(len(y_set), y_pca_len, replace=True)
         #print(y_idx_pca, y_idx_pca.shape)
         #y_loader = torch.utils.data.DataLoader(y_set, batch_size=1, shuffle=True, num_workers=0)
