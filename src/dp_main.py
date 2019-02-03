@@ -43,13 +43,15 @@ def parse_args():
         help='num epochs (max_epoch_id + 1)')
     parser.add_argument('--device_id', '-d', metavar='GPUID', default=0, type=int,
         choices=range(4), help='GPU Device ID for multi GPU system')
+    parser.add_argument('--test_subj_id', '-tid', metavar='SUBJID', default=0, type=int,
+        choices=range(9), help='Test subject\'s ID')
     parser.add_argument('--reduced-dataset', '-rd', action='store_true',
         help='use a reduced dataset, only for testing')
-    parser.add_argument('--refined-com', '-rc', action='store_true',
+    parser.add_argument('--refined_com', '-rc', action='store_true',
         help='use com from refineNet stored in txt files')
-    parser.add_argument('--force-pca', '-fp', action='store_true',
+    parser.add_argument('--force_pca', '-fp', action='store_true',
         help='Force new PCA calc and overwrite cache (if exists)')
-    parser.add_argument('--save-eval', '-se', action='store_true',
+    parser.add_argument('--save_eval', '-se', action='store_true',
         help='Save evaluation results that are consistent with Awesome Hand Pose Estimation')
     args = parser.parse_args()
     return args
