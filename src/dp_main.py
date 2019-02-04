@@ -362,20 +362,23 @@ def main():
     # test_epoch(net, fit_loader, fit_res_collector, device, dtype)
     # keypoints_fit = fit_res_collector.get_result()
     # save_keypoints('./fit_res.txt', keypoints_fit)
+    
     print("\nFINAL_AVG_3D_ERROR: %0.4fmm" % test_res_collector.calc_avg_3D_error())
 
-    print("With Config:", "{GT_CoM: %s, Aug: %s, Full_Dataset: %s}" % \
-                (not args.refined_com, [aug.name for aug in AUG_MODES], not args.reduced_dataset ))
+    print("With Config:", "{GT_CoM: %s, Aug: %s, PCA_Aug: %s,\nFull_Dataset: %s, PCA_SZ: %d}" % \
+                (not args.refined_com, [aug.name for aug in AUG_MODES], 
+                 [aug.name for aug in PCA_AUG_MODES], not args.reduced_dataset, y_pca_len))
     
 
-    if args.save_eval:
+    if args.save_eval and not args.refined_com:
         ### new saving results and plots ###
         print('\n==> Saving ..')
-        pred_fname = 'eval/MSRA15/eval_test_%d_ahpe.txt' % TEST_SUBJ_ID
-        plot_fname = 'eval/MSRA15/msra_test_%d_joint_acc.png' % TEST_SUBJ_ID
+        pred_fname = 'eval/MSRA15/eval_test_%d_ahpe_gt_com.txt' % TEST_SUBJ_ID
+        plot_fname = 'eval/MSRA15/msra_test_%d_joints_acc_gt_com.png' % TEST_SUBJ_ID
 
-        saveKeypoints(pred_fname, 
-            test_res_collector.get_ahpe_result('eval/MSRA15/msra_test_list.txt', TEST_SUBJ_ID, DATA_DIR))
+        #test_res_collector.get_ahpe_result('eval/MSRA15/msra_test_list.txt', TEST_SUBJ_ID, DATA_DIR)
+
+        saveKeypoints(pred_fname, test_res_collector.get_result())
         print("Keypoints saved to %s..." % pred_fname)
 
         names = ['joint_'+str(i+1) for i in range(NUM_KEYPOINTS)]
@@ -386,7 +389,8 @@ def main():
         fig.savefig(plot_fname)
         #plt.show()
         print("Plot saved to %s..." % plot_fname)
-    
+    elif args.save_eval:
+        print("Warning: Cannot save file as its incompatible with AHPE when using refine_com")
     
     
     print('\nAll done ..')

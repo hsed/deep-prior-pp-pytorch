@@ -695,33 +695,46 @@ class DeepPriorBatchResultCollector():
 
         assert (test_model_id >= 0 and test_model_id <= 8), "Error: Test_ID must be >=0 and <=8"
         
-        prefix = 'P%d' % test_model_id
-        with open(ahpe_fname) as f:
-            val_name_arr = \
-                np.array([os.path.join(dataset_dir, line.rstrip('\n')) \
-                                    for line in f if line.startswith(prefix)])
-        dataset_name_arr = np.array(self.data_loader.dataset.names)
-        valid_mask_arr = np.isin(dataset_name_arr, val_name_arr, assume_unique=True)
-        #print("val_name_arr:\n", dataset_name_arr)
-        #print("\nDataset_Name_Arr:\n", dataset_name_arr)
+        # # prefix = 'P%d' % test_model_id
+        # # with open(ahpe_fname) as f:
+        # #     val_name_arr = \
+        # #         np.array([os.path.join(dataset_dir, line.rstrip('\n')) \
+        # #                             for line in f if line.startswith(prefix)])
+        # # dataset_name_arr = np.array(self.data_loader.dataset.names)
+        # # valid_mask_arr = np.isin(dataset_name_arr, val_name_arr, assume_unique=True)
+
+        # # valid_inv_mask_arr = np.isin(val_name_arr, dataset_name_arr, assume_unique=True)
         
-        # note our keypt arr is (num_samples, num_joints, num_dim)
-        # we just need to filter out num_samples, nothing else!
-        val_keyp_arr = self.keypoints[ valid_mask_arr ]
-        print("Filter Results: (Mask, Valid Names, Valid Keypoints) -- ",\
-                    valid_mask_arr.shape, val_name_arr.shape, val_keyp_arr.shape)
+        # # print("AAAA: \n", self.data_loader.dataset.names[-5:])
+        # # aa = np.where(valid_mask_arr == False)
+        # # bb = np.where(valid_inv_mask_arr == False)
+        # # print("in_our_dataset_not_in_ahpe: ", aa, "\nvaL: ", dataset_name_arr[aa])
+        # # print("\n\nin_ahpe_not_in_our_dataset: ", bb, 
+        # #       "\nvaL: ", val_name_arr[bb])
+        # # quit()
+        # # #print("val_name_arr:\n", dataset_name_arr)
+        # # #print("\nDataset_Name_Arr:\n", dataset_name_arr)
+        
+        # # # note our keypt arr is (num_samples, num_joints, num_dim)
+        # # # we just need to filter out num_samples, nothing else!
+        # # val_keyp_arr = self.keypoints[ valid_mask_arr ]
+        # # print("Filter Results: (Mask, Valid Names, Valid Keypoints) -- ",\
+        # #             valid_mask_arr.shape, val_name_arr.shape, val_keyp_arr.shape)
 
-        assert val_name_arr.shape[0] == val_keyp_arr.shape[0], \
-                        "Error: Something went wrong with np.in1d..."
-        assert self.keypoints.shape[1] == self.keypoints.shape[1]
-        assert self.keypoints.shape[2] == self.keypoints.shape[2]
+        # # assert val_name_arr.shape[0] == val_keyp_arr.shape[0], \
+        # #                 "Error: Something went wrong with np.in1d..."
+        # # assert self.keypoints.shape[1] == self.keypoints.shape[1]
+        # # assert self.keypoints.shape[2] == self.keypoints.shape[2]
 
-        return val_keyp_arr
+        return None
 
     
     def calc_avg_3D_error(self, ret_avg_err_per_joint=False):
         ## use self.keypoints for model's results
         ## use self.keypoints_gt for gt results
+
+        #print("KEY_PT_GT:::\n", self.keypoints_gt[:3, :5, :])
+        #print("KEY_PT:::\n", self.keypoints[:3, :5, :])
 
         ## R^{500, 21, 3} - R^{500, 21, 3} => R^{500, 21, 3} err
         ## R^{500, 21, 3} == l2_err_dist_per_joint ==> R^{500, 21} <-- find euclidian dist btw gt and pred

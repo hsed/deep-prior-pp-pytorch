@@ -141,8 +141,9 @@ class MARAHandDataset(Dataset):
         ## later they are reshaped to (240*320==76800, 3)
         ## points = points.reshape((-1, 3))
 
+        # NEW -- ONLY USE GT REF PTS (CoM)
         #self.ref_pts[index], # 3d ref point of centre of mass, this is the REFINED CoM points
-        refpt = self.joints_world[index][5] if not self.use_refined_com else self.ref_pts[index]
+        refpt = self.joints_world[index][5] #if not self.use_refined_com else self.ref_pts[index]
 
         sample = {
             'name': self.names[index], # sample name
@@ -163,9 +164,11 @@ class MARAHandDataset(Dataset):
     def _load(self):
         self._compute_dataset_size()
 
+        print("Train/Test:", self.train_size, self.test_size )
+
         self.num_samples = self.train_size if self.mode == 'train' else self.test_size
         self.joints_world = np.zeros((self.num_samples, self.joint_num, self.world_dim), dtype=np.float32)
-        self.ref_pts = np.zeros((self.num_samples, self.world_dim), dtype=np.float32)
+        #self.ref_pts = np.zeros((self.num_samples, self.world_dim), dtype=np.float32)
         self.names = []
 
         # Collect reference center points strings
@@ -174,11 +177,12 @@ class MARAHandDataset(Dataset):
         ## all subjects except for the test subject and then evaluated for all subjects (incl test subject)
         ## the train file contains results for all data so 9 * 17 * 500
         ## the test file contains results only for one data so 17 * 500
-        if self.mode == 'train': ref_pt_file = 'center_train_' + str(self.test_subject_id) + '_refined.txt'
-        else: ref_pt_file = 'center_test_' + str(self.test_subject_id) + '_refined.txt'
+        
+        #if self.mode == 'train': ref_pt_file = 'center_train_' + str(self.test_subject_id) + '_refined.txt'
+        #else: ref_pt_file = 'center_test_' + str(self.test_subject_id) + '_refined.txt'
 
-        with open(os.path.join(self.center_dir, ref_pt_file)) as f:
-                ref_pt_str = [l.rstrip() for l in f]
+        #with open(os.path.join(self.center_dir, ref_pt_file)) as f:
+                #ref_pt_str = [l.rstrip() for l in f]
 
         #
         file_id = 0
@@ -191,7 +195,18 @@ class MARAHandDataset(Dataset):
             else: raise RuntimeError('unsupported mode {}'.format(self.mode))
             
             if model_chk:
+                
                 for fd in self.folder_list:
+                    ## extract all valid files for current model AND gesture ~ P0/1 -> P8/Y
+                    prefix = 'P%d/%s' % (mid, fd)
+                    with open(os.path.join(self.root, 'msra_test_list.txt')) as f:
+                        val_files_arr = \
+                            np.array([os.path.normpath(os.path.join(self.root, line.rstrip('\n'))) \
+                                                for line in f if line.startswith(prefix)])
+                    
+                    #print("PREFIX: ", prefix, "\nStart: ", val_files_arr[:5], "\nEnd: ", val_files_arr[-5:])
+                    #quit()
+
                     annot_file = os.path.join(self.root, 'P'+str(mid), fd, 'joint.txt')
 
                     lines = []
@@ -200,16 +215,29 @@ class MARAHandDataset(Dataset):
 
                     # skip first line as it contains an int: `num of samples`
                     for i in range(1, len(lines)):
-                        # referece point, this contains REFINED CoM 3d co-ord
-                        splitted = ref_pt_str[file_id].split()
-                        if splitted[0] == 'invalid':
-                            print('Warning: found invalid reference frame')
-                            file_id += 1
+                        # make sure to check if this is a valid file,
+                        # if not skip it
+                        filename = os.path.normpath(os.path.join(self.root, 'P'+str(mid), fd, 
+                                                str('{:0>6d}'.format(i-1) + '_depth.bin')))
+
+                        if filename not in val_files_arr:
+                            print("Warning: skipping %s as its not in msra_test_list.txt" % filename)
+                            file_id += 1 # to ensure our com indexing is correct
                             continue
-                        else:
-                            self.ref_pts[frame_id, 0] = float(splitted[0]) #CoM x
-                            self.ref_pts[frame_id, 1] = float(splitted[1]) #CoM y
-                            self.ref_pts[frame_id, 2] = float(splitted[2]) # CoM z
+                        
+                        #print("FILENAME: ", filename, "Is in", (filename in val_files_arr))
+                        #quit()
+
+                        # referece point, this contains REFINED CoM 3d co-ord
+                        #splitted = ref_pt_str[file_id].split()
+                        #if splitted[0] == 'invalid':
+                            #print('Warning: found invalid reference frame')
+                            #file_id += 1
+                            #continue
+                        #else:
+                            #self.ref_pts[frame_id, 0] = float(splitted[0]) #CoM x
+                            #self.ref_pts[frame_id, 1] = float(splitted[1]) #CoM y
+                            #self.ref_pts[frame_id, 2] = float(splitted[2]) # CoM z
 
                         # joint points... the gt (y-val) values in 3D for 21 joints
                         splitted = lines[i].split()
@@ -218,16 +246,29 @@ class MARAHandDataset(Dataset):
                             self.joints_world[frame_id, jid, 1] = float(splitted[jid * self.world_dim + 1])
                             self.joints_world[frame_id, jid, 2] = -float(splitted[jid * self.world_dim + 2])    ## ATTENTION: NOTE THE NEGATION THUS THIS IS SAME AS DEEP-PRIOR
                         
-                        filename = os.path.join(self.root, 'P'+str(mid), fd, '{:0>6d}'.format(i-1) + '_depth.bin')
+                        
                         self.names.append(filename)
 
                         frame_id += 1   ## this may differ from i if any CoM is invalid otherwise it won't
                         ## frame_id is used to ensure we only set samples with valid CoM values in our training/testing data matrix
                         ## all other samples are ignored.
                         file_id += 1 ## this is exactly same as i, so frame_id == i , so extra
+        
+        #print("NAMES_SZ: ", len(self.names))
+        #print("Last three: ", self.names[-3:])
+
 
     def _compute_dataset_size(self):
         self.train_size, self.test_size = 0, 0
+
+        # with open(os.path.join(self.root, 'msra_test_list.txt')) as f:
+        #     self.test_size = sum(
+        #         [1 for line in f if line.startswith('P%d' % self.test_subject_id)]
+        #     )
+        # with open(os.path.join(self.root, 'msra_test_list.txt')) as f:
+        #     self.train_size = sum(
+        #         [1 for line in f if (not line.startswith('P%d' % self.test_subject_id))]
+        #     )
 
         for mid in range(self.subject_num):
             num = 0

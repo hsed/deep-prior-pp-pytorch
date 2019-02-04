@@ -95,3 +95,12 @@ See `doc/notes.md` for more details (currently in rough / needs cleanup)
 See `eval/README.md` for more details.
 
 
+## New
+We will evaluate results without the use of refineNet pre-computed CoM because they have used a slightly different dataset for their evaluation so the CoM cannot be used from their directly i.e. they are neither all the same nor a subset (some don't exist in either datasets).
+
+Using GT_CoM
+FINAL_AVG_3D_ERROR: 10.4478mm
+PCA_AUG_sz = 200k
+With Config: {GT_CoM: True, Aug: ['AUG_ROT', 'AUG_TRANS', 'AUG_NONE'], Full_Dataset: True}
+Test id 5
+same config for pca augmentation
