@@ -291,11 +291,13 @@ class MARAHandDataset(Dataset):
                     return False
 
         # Check precomputed centers by v2v-hand model's author
-        for subject_id in range(self.subject_num):
-            center_train = os.path.join(self.center_dir, 'center_train_' + str(subject_id) + '_refined.txt')
-            center_test = os.path.join(self.center_dir, 'center_test_' + str(subject_id) + '_refined.txt')
-            if not os.path.exists(center_train) or not os.path.exists(center_test):
-                print('Error: precomputed center files do not exist')
-                return False
+        # only check if not using gt com
+        if self.use_refined_com:
+            for subject_id in range(self.subject_num):
+                center_train = os.path.join(self.center_dir, 'center_train_' + str(subject_id) + '_refined.txt')
+                center_test = os.path.join(self.center_dir, 'center_test_' + str(subject_id) + '_refined.txt')
+                if not os.path.exists(center_train) or not os.path.exists(center_test):
+                    print('Error: precomputed center files do not exist')
+                    return False
 
         return True
